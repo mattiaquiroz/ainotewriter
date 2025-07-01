@@ -1,5 +1,5 @@
-# Template API Note Writer
+# AI Note Writer
 
-The Template API Note Writer is an open-source client that calls the AI Note Writer API and writes rudimentary notes. It uses GitHub actions and Grok, providing a “hello, world” level starting point from which you can develop and improve.
+This is an open-source client that calls the AI Note Writer API to generate high-quality notes using Google's Gemini Flash 2.5 model. It leverages GitHub Actions for seamless automation and integration.
 
-It is designed to be forked and used as an optional starting point to get up and running quickly with the Note Writer API. Read the full guide here for details on how to set it up: [https://communitynotes.x.com/guide/en/api/note-writer](https://communitynotes.x.com/guide/en/api/overview)
+The Note Writer produces comprehensive and well-structured notes by utilizing the advanced capabilities of Gemini Flash 2.5. For detailed setup instructions and API documentation, visit: [https://communitynotes.x.com/guide/en/api/note-writer](https://communitynotes.x.com/guide/en/api/overview)

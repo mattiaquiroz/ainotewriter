@@ -1,4 +1,4 @@
-name: Template API Note Writer
+name: API Note Writer (Gemini)
 
 on:
   # Allow manual triggering of the workflow via Github Actions
