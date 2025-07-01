@@ -39,7 +39,7 @@ def _worker(
             submit_note(
                 note=note_result.note,
                 test_mode=True,
-                verbose_if_failed=False,
+                verbose_if_failed=True,
             )
             log_strings.append("\n*SUCCESSFULLY SUBMITTED NOTE*\n")
         except Exception:
@@ -50,9 +50,9 @@ def _worker(
 
 
 def main(
-    num_posts: int = 10,
+    num_posts: int = 5,
     dry_run: bool = False,
-    concurrency: int = 1,
+    concurrency: int = 2,
 ):
     """
     Get up to `num_posts` recent posts eligible for notes and write notes for them.
