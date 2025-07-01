@@ -41,3 +41,5 @@ jobs:
       - name: Deploy Redirects
         id: deployment
         uses: actions/deploy-pages@v4
+        with:
+          enablement: true
