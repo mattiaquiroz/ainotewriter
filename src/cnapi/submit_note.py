@@ -24,19 +24,40 @@ def get_notes_written_by_user(test_mode: bool = True, max_results: int = 100) ->
             path,
         ]
         
-        result = run_xurl(cmd, verbose_if_failed=False)
+        result = run_xurl(cmd, verbose_if_failed=True)
+        
+        print(f"DEBUG: Raw API response: {result}")
+        print(f"DEBUG: Response type: {type(result)}")
         
         # Extract post_ids from the response
         post_ids = set()
-        if isinstance(result, dict) and "data" in result:
-            for note in result["data"]:
-                if "post_id" in note:
-                    post_ids.add(str(note["post_id"]))
+        if isinstance(result, dict):
+            print(f"DEBUG: Response keys: {result.keys()}")
+            
+            if "data" in result:
+                print(f"DEBUG: Found 'data' key with {len(result['data'])} items")
+                for i, note in enumerate(result["data"]):
+                    print(f"DEBUG: Note {i}: {note}")
+                    if "post_id" in note:
+                        post_id = str(note["post_id"])
+                        post_ids.add(post_id)
+                        print(f"DEBUG: Added post_id: {post_id}")
+                    else:
+                        print(f"DEBUG: Note {i} missing 'post_id' field")
+            else:
+                print("DEBUG: No 'data' key found in response")
+        else:
+            print(f"DEBUG: Response is not a dict: {result}")
         
+        print(f"DEBUG: Final post_ids set: {post_ids}")
+        print(f"DEBUG: Returning {len(post_ids)} post IDs")
         return post_ids
         
     except Exception as e:
-        print(f"Warning: Could not fetch existing notes: {e}")
+        print(f"ERROR: Could not fetch existing notes: {e}")
+        print(f"ERROR: Exception type: {type(e)}")
+        import traceback
+        print(f"ERROR: Traceback: {traceback.format_exc()}")
         return set()  # Return empty set on error, so we don't skip posts unnecessarily
 
 
