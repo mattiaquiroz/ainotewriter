@@ -1,9 +1,43 @@
 import json
-from typing import Any, Dict
+from typing import Any, Dict, Set
 
 from .xurl_util import run_xurl
 
 from data_models import ProposedMisleadingNote
+
+
+def get_notes_written_by_user(test_mode: bool = True, max_results: int = 100) -> Set[str]:
+    """
+    Get all post IDs that the user has already written notes for.
+    Uses the official API endpoint: GET /2/notes/search/notes_written
+    Returns a set of post_id strings for fast lookup.
+    """
+    try:
+        path = (
+            "/2/notes/search/notes_written"
+            f"?test_mode={'true' if test_mode else 'false'}"
+            f"&max_results={max_results}"
+        )
+        
+        cmd = [
+            "xurl",
+            path,
+        ]
+        
+        result = run_xurl(cmd, verbose_if_failed=False)
+        
+        # Extract post_ids from the response
+        post_ids = set()
+        if isinstance(result, dict) and "data" in result:
+            for note in result["data"]:
+                if "post_id" in note:
+                    post_ids.add(str(note["post_id"]))
+        
+        return post_ids
+        
+    except Exception as e:
+        print(f"Warning: Could not fetch existing notes: {e}")
+        return set()  # Return empty set on error, so we don't skip posts unnecessarily
 
 
 def submit_note(
