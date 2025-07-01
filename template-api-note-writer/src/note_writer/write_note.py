@@ -10,17 +10,20 @@ from note_writer.misleading_tags import get_misleading_tags
 
 def _ensure_urls_have_protocol(text: str) -> str:
     """Ensure all URLs in the text have https:// prefix for API compliance"""
-    # Pattern to find URLs that don't have protocol
-    url_pattern = r'\b(?<!https?://)(?<!ftp://)((?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,})(?:/[^\s]*)?'
+    # Simple pattern to find domain.com style URLs without protocol
+    url_pattern = r'\b([a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]*\.)+[a-zA-Z]{2,}(?:/[^\s]*)?'
     
-    def add_https(match):
+    def add_https_if_needed(match):
         url = match.group(0)
-        # Don't modify if it already has a protocol
-        if '://' in url:
+        # Check if the URL already has a protocol by looking at the text before it
+        start_pos = match.start()
+        # Look for protocol before the match
+        before_match = text[max(0, start_pos-10):start_pos]
+        if before_match.endswith('://') or before_match.endswith('http://') or before_match.endswith('https://'):
             return url
         return f'https://{url}'
     
-    return re.sub(url_pattern, add_https, text)
+    return re.sub(url_pattern, add_https_if_needed, text)
 
 
 def _get_prompt_for_note_writing(post: Post, images_summary: str, search_results: str):
