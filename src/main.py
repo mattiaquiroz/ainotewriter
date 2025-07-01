@@ -86,7 +86,7 @@ if __name__ == "__main__":
     dotenv.load_dotenv()
     parser = argparse.ArgumentParser(description="Run note‑writing bot once.")
     parser.add_argument(
-        "--num-posts", type=int, default=5, help="Number of posts to process"
+        "--num-posts", type=int, default=20, help="Number of posts to process"
     )
     parser.add_argument(
         "--dry-run",
