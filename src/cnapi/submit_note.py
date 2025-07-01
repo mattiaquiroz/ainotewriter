@@ -17,7 +17,6 @@ def get_notes_written_by_user(test_mode: bool = True, max_results: int = 100) ->
             "/2/notes/search/notes_written"
             f"?test_mode={'true' if test_mode else 'false'}"
             f"&max_results={max_results}"
-            "&note.fields=post_id"  # Request the post_id field explicitly
         )
         
         cmd = [
