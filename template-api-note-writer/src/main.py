@@ -50,7 +50,7 @@ def _worker(
 
 
 def main(
-    num_posts: int = 5,
+    num_posts: int = 20,
     dry_run: bool = False,
     concurrency: int = 1,
 ):
