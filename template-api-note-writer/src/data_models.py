@@ -6,7 +6,7 @@ from pydantic import BaseModel
 
 
 class ProposedNote(BaseModel):
-    post_id: int
+    post_id: str
     note_text: str
     trustworthy_sources: bool = True
 

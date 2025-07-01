@@ -1,3 +1,4 @@
+import re
 from data_models import NoteResult, Post, ProposedMisleadingNote
 from note_writer.llm_util import (
     get_grok_live_search_response,
@@ -5,6 +6,21 @@ from note_writer.llm_util import (
     grok_describe_image,
 )
 from note_writer.misleading_tags import get_misleading_tags
+
+
+def _ensure_urls_have_protocol(text: str) -> str:
+    """Ensure all URLs in the text have https:// prefix for API compliance"""
+    # Pattern to find URLs that don't have protocol
+    url_pattern = r'\b(?<!https?://)(?<!ftp://)((?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,})(?:/[^\s]*)?'
+    
+    def add_https(match):
+        url = match.group(0)
+        # Don't modify if it already has a protocol
+        if '://' in url:
+            return url
+        return f'https://{url}'
+    
+    return re.sub(url_pattern, add_https, text)
 
 
 def _get_prompt_for_note_writing(post: Post, images_summary: str, search_results: str):
@@ -115,13 +131,16 @@ def research_post_and_write_note(
     ):
         return NoteResult(post=post, refusal=note_or_refusal_str)
 
-    misleading_tags = get_misleading_tags(post, images_summary, note_or_refusal_str)
+    # Ensure URLs in the note have proper protocol
+    formatted_note_text = _ensure_urls_have_protocol(note_or_refusal_str)
+
+    misleading_tags = get_misleading_tags(post, images_summary, formatted_note_text)
 
     return NoteResult(
         post=post,
         note=ProposedMisleadingNote(
-            post_id=post.post_id,
-            note_text=note_or_refusal_str,
+            post_id=str(post.post_id),  # Convert int to str for API compliance
+            note_text=formatted_note_text,
             misleading_tags=misleading_tags,
         ),
     )
