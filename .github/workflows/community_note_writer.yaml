@@ -24,7 +24,7 @@ jobs:
         uses: astral-sh/setup-uv@v5
       
       - name: Install the project
-        run: cd template-api-note-writer && uv sync
+        run: uv sync
 
       - name: Install xurl CLI
         run: |
