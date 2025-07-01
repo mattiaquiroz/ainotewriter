@@ -52,7 +52,7 @@ def _worker(
 def main(
     num_posts: int = 5,
     dry_run: bool = False,
-    concurrency: int = 2,
+    concurrency: int = 1,
 ):
     """
     Get up to `num_posts` recent posts eligible for notes and write notes for them.
@@ -96,7 +96,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--concurrency",
         type=int,
-        default=2,
+        default=1,
         help="Number of concurrent tasks to run",
     )
     args = parser.parse_args()
