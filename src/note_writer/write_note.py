@@ -25,79 +25,59 @@ def _ensure_urls_have_protocol(text: str) -> str:
     
     return re.sub(url_pattern, add_https_if_needed, text)
 
-
 def _get_prompt_for_note_writing(post: Post, images_summary: str, search_results: str):
-    return f"""Below will be a post on X, and live search results from the web. \
-If the post was misleading and needs a community note, \
-then your response should be the proposed community note itself. \
-If the post is not misleading, or does not contain any concrete fact-checkable claims, or there \
-is not strong enough evidence to write a 100%-supported-by-evidence \
-community note, then do not write a note, and instead respond with "NO NOTE NEEDED." or \
-"NOT ENOUGH EVIDENCE TO WRITE A GOOD COMMUNITY NOTE.".
+    return f"""You will be given a post on X (formerly Twitter), a summary of any images, and live search results. 
+        Your task is to determine whether the post is misleading and if it merits a Community Note.
 
-If a note is justified, then please write \
-a very good community note, which is concise (tweet-length at most), interesting and clear to read, \
-contains no unnecessary words, is backed by very solid evidence from sources that would be most likely \
-to be found trustworthy by people on both sides of the political spectrum (citing URL(s)), and is \
-written in a way that would be most likely to be found trustworthy by people on both sides of the \
-political spectrum. \
+        Instructions:
 
-The answer MUST be short, like a post on X (280 characters maximum, not counting URLs). \
-The note should not include any sort of wasted characters e.g. [Source] when listing a URL. Just state the URL directly in the text. \
-Each note MUST include at least one URL/link source. Nothing else counts as a source other than a URL/link. \
-Each note MUST NOT use any hashtags (#). Keep a professional tone with no hashtags, emojis, etc. \
+        - If the post is misleading and there is strong, up-to-date, verifiable evidence to support a correction, write a concise Community Note (280 characters max, not counting URLs).
+        - The note must:
+        - Be written in a clear, neutral, and professional tone (no emojis, hashtags, or preambles like "Community Note:")
+        - Include at least one working, trustworthy URL as a source. Do not write "[Source]" — just include the plain URL.
+        - Prefer recent, non-partisan sources that would be found trustworthy across political perspectives.
+        - If the post is not misleading or does not contain concrete, fact-checkable claims, respond with:
+        - "NO NOTE NEEDED."
+        - If the post may be misleading but the available evidence is outdated, broken (e.g. 404 links), or insufficient to confidently write a correction, respond with:
+        - "NOT ENOUGH EVIDENCE TO WRITE A GOOD COMMUNITY NOTE."
 
-If the post does not need a community note (either because the original post is not misleading, \
-or does not contain any concrete fact-checkable claims, \
-then your response should simply be "NO NOTE NEEDED.".
+        Only write a note if you're highly confident that:
+        - The post is misleading,
+        - The correction is well-supported by evidence,
+        - The correction would likely be seen as helpful and trustworthy by readers across political views.
 
-If the post may need a community note, but you weren't able to find enough concrete evidence to \
-write an ironclad community note, then your response should be \
-"NOT ENOUGH EVIDENCE TO WRITE A GOOD COMMUNITY NOTE.".
+        Do not write notes about predictions or speculative statements. Ignore outdated or incorrect source content (e.g. referring to past administrations or candidates when context has changed).
 
-If you are writing a note, don't preface it with anything like "Community Note:". Just write the note.
+        Post text:
+        ```
+        {post.text}
+        ```
 
-    ```
-    Post text:
-    ```
-    {post.text}
-    ```
+        Summary of images in the post:
+        ```
+        {images_summary}
+        ```
 
-    Summary of images in the post:
-    ```
-    {images_summary}
-    ```
-
-    Live search results:
-    ```
-    {search_results}
-    ```
-
-    If you aren't sure whether the post is misleading and warrants a note, then err on the side of \
-not writing a note (instead, say "NO NOTE NEEDED" or "NOT ENOUGH EVIDENCE TO WRITE A GOOD COMMUNITY NOTE"). \
-Only write a note if you are extremely confident that the post is misleading, \
-that the evidence is strong, and that the note will be found helpful by the community. \
-For example, if a post is just making a prediction about the future, don't write a note \
-saying that the prediction is uncertain or likely to be wrong. \
+        Live search results:
+        ```
+        {search_results}
+        ```
     """
-
 
 def _get_prompt_for_live_search(post: Post, images_summary: str = ""):
-    return f"""Below will be a post on X. Do research on the post to determine if the post is potentially misleading. \
-Your response MUST include URLs/links directly in the text, next to the claim it supports. Don't include any sort \
-of wasted characters e.g. [Source] when listing a URL. Just state the URL directly in the text. \
+    return f"""Below is a post on X. Conduct research to determine if the post is potentially misleading.
+        Your response MUST include URLs/links directly in the text next to the claim they support. Do NOT include any unnecessary characters like "[Source]", just provide the plain URL.
+        Only cite sources that are reliable, up-to-date, and accessible (avoid 404 errors or outdated information). If a source is broken or clearly outdated (e.g., refers to past events that are no longer relevant), do NOT use it.
+        Post text:
+        ```
+        {post.text}
+        ```
 
-    Post text:
-    ```
-    {post.text}
-    ```
-
-    Summary of images in the post:
-    ```
-    {images_summary}
-    ```
+        Summary of images in the post:
+        ```
+        {images_summary}
+        ```
     """
-
 
 def _summarize_images(post: Post) -> str:
     """
