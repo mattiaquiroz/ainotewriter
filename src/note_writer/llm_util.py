@@ -2,7 +2,7 @@ import os
 from typing import List
 
 import dotenv
-from google import genai
+from google.genai import genai
 
 # Configure Gemini API
 client = genai.Client()
