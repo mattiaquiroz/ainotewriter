@@ -66,7 +66,7 @@ def gemini_describe_image(image_url: str, temperature: float = 0.01):
         response = client.models.generate_content(
             model='gemini-2.5-flash-lite',
             contents=[prompt, image],
-            generation_config=generation_config
+            config=generation_config
         )
         return response.text
         
