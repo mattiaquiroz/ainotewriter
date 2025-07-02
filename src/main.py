@@ -3,7 +3,8 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import List
 
 from cnapi.get_api_eligible_posts import get_posts_eligible_for_notes
-from cnapi.submit_note import submit_note, get_notes_written_by_user
+from cnapi.submit_note import submit_note
+from cnapi.gist_util import get_processed_post_ids, add_processed_post_id
 from data_models import NoteResult, Post
 import dotenv
 from note_writer.write_note import research_post_and_write_note
@@ -42,10 +43,20 @@ def _worker(
                 verbose_if_failed=False,
             )
             log_strings.append("\n*SUCCESSFULLY SUBMITTED NOTE*\n")
+            # Add the post ID to the Gist to track that it's been processed
+            if add_processed_post_id(str(post.post_id)):
+                log_strings.append("*ADDED TO GIST*: Post ID added to processed list\n")
+            else:
+                log_strings.append("*GIST WARNING*: Failed to add post ID to processed list\n")
         except Exception as e:
             error_str = str(e)
             if "already created a note" in error_str.lower():
                 log_strings.append("\n*ALREADY HAVE NOTE*: We already wrote a note on this post; moving on.\n")
+                # Still add to Gist since we know it's been processed
+                if add_processed_post_id(str(post.post_id)):
+                    log_strings.append("*ADDED TO GIST*: Post ID added to processed list\n")
+                else:
+                    log_strings.append("*GIST WARNING*: Failed to add post ID to processed list\n")
             else:
                 log_strings.append(f"\n*ERROR SUBMITTING NOTE*: {error_str}\n")
     print("".join(log_strings) + "\n")
@@ -61,41 +72,39 @@ def main(
     If `dry_run` is True, do not submit notes to the API, just print them to the console.
     """
 
-    #print(f"Getting up to {num_posts} recent posts eligible for notes")
-    
-    # First, get all posts we've already written notes for to save expensive API calls
-    # print("Fetching existing notes to avoid duplicate work...")
-    # existing_note_post_ids = get_notes_written_by_user(test_mode=True)
-    # print(f"Found {len(existing_note_post_ids)} posts we've already written notes for")
+    # Get posts we've already processed from the Gist to save expensive API calls
+    print("Fetching processed post IDs from Gist to avoid duplicate work...")
+    processed_post_ids = get_processed_post_ids()
+    print(f"Found {len(processed_post_ids)} posts already processed")
     
     # Get eligible posts
     eligible_posts: List[Post] = get_posts_eligible_for_notes(max_results=num_posts)
-    #print(f"Found {len(eligible_posts)} recent posts eligible for notes")
+    print(f"Found {len(eligible_posts)} recent posts eligible for notes")
     
-    # Filter out posts we've already written notes for
-    # new_posts = [post for post in eligible_posts if str(post.post_id) not in existing_note_post_ids]
-    # skipped_count = len(eligible_posts) - len(new_posts)
+    # Filter out posts we've already processed
+    new_posts = [post for post in eligible_posts if str(post.post_id) not in processed_post_ids]
+    skipped_count = len(eligible_posts) - len(new_posts)
     
-    # print(f"  Eligible Post IDs: {', '.join([str(post.post_id) for post in eligible_posts])}")
-    # if skipped_count > 0:
-    #     skipped_ids = [str(post.post_id) for post in eligible_posts if str(post.post_id) in existing_note_post_ids]
-    #     print(f"  🚀 SKIPPED {skipped_count} posts (already have notes): {', '.join(skipped_ids)}")
-    #     print(f"  💰 SAVED EXPENSIVE AI CALLS: Avoided {skipped_count} Gemini API calls!")
-    print(f"📝 Processing {len(eligible_posts)} posts\n")
+    print(f"  Eligible Post IDs: {', '.join([str(post.post_id) for post in eligible_posts])}")
+    if skipped_count > 0:
+        skipped_ids = [str(post.post_id) for post in eligible_posts if str(post.post_id) in processed_post_ids]
+        print(f"  🚀 SKIPPED {skipped_count} posts (already processed): {', '.join(skipped_ids)}")
+        print(f"  💰 SAVED EXPENSIVE AI CALLS: Avoided {skipped_count} Gemini API calls!")
+    print(f"📝 Processing {len(new_posts)} posts\n")
     
-    if len(eligible_posts) == 0:
-        print("No posts to process - we already have notes for all posts!")
+    if len(new_posts) == 0:
+        print("No posts to process - we already have processed all eligible posts!")
         return
 
     if concurrency > 1:
         with ThreadPoolExecutor(max_workers=concurrency) as executor:
             futures = [
-                executor.submit(_worker, post, dry_run) for post in eligible_posts
+                executor.submit(_worker, post, dry_run) for post in new_posts
             ]
             for future in futures:
                 future.result()
     else:
-        for post in eligible_posts:
+        for post in new_posts:
             _worker(post, dry_run)
     print("Done.")
 
