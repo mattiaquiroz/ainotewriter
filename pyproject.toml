@@ -1,7 +1,7 @@
 [project]
-name = "template-api-note-writer"
-version = "0.1.0"
-description = "Template API Note Writer"
+name = "gemini-x-note-writer"
+version = "0.1.1"
+description = "Using Gemini and API Note Writer to create X notes"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
