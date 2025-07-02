@@ -44,7 +44,7 @@ def _worker(
             submit_note(
                 note=note_result.note,
                 test_mode=True,
-                verbose_if_failed=True,
+                verbose_if_failed=False,
             )
             log_strings.append("\n*SUCCESSFULLY SUBMITTED NOTE*\n")
             should_add_to_gist = True
