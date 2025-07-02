@@ -39,7 +39,6 @@ def get_processed_post_ids() -> Set[str]:
         data = json.loads(content)
         post_ids = data.get("post_ids", [])
         
-        print(f"Retrieved {len(post_ids)} processed post IDs from Gist")
         return set(post_ids)
         
     except requests.RequestException as e:

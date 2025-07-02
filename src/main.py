@@ -59,10 +59,10 @@ def _worker(
     # Also add to Gist for permanent conditions that won't change on retry
     elif not dry_run:
         if note_result.error and "Video not supported yet" in note_result.error:
-            log_strings.append("*PERMANENT ERROR*: Video not supported - adding to processed list\n")
+            log_strings.append("\n*PERMANENT ERROR*: Video not supported - adding to processed list\n")
             should_add_to_gist = True
         elif note_result.refusal and "NO NOTE NEEDED" in note_result.refusal:
-            log_strings.append("*PERMANENT REFUSAL*: No note needed - adding to processed list\n")
+            log_strings.append("\n*PERMANENT REFUSAL*: No note needed - adding to processed list\n")
             should_add_to_gist = True
     
     # Add to Gist if we determined it should be added
