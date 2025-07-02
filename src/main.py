@@ -39,7 +39,7 @@ def _worker(
             submit_note(
                 note=note_result.note,
                 test_mode=True,
-                verbose_if_failed=True,
+                verbose_if_failed=False,
             )
             log_strings.append("\n*SUCCESSFULLY SUBMITTED NOTE*\n")
         except Exception as e:
@@ -64,13 +64,13 @@ def main(
     print(f"Getting up to {num_posts} recent posts eligible for notes")
     
     # First, get all posts we've already written notes for to save expensive API calls
-    print("Fetching existing notes to avoid duplicate work...")
+    # print("Fetching existing notes to avoid duplicate work...")
     # existing_note_post_ids = get_notes_written_by_user(test_mode=True)
     # print(f"Found {len(existing_note_post_ids)} posts we've already written notes for")
     
     # Get eligible posts
     eligible_posts: List[Post] = get_posts_eligible_for_notes(max_results=num_posts)
-    print(f"Found {len(eligible_posts)} recent posts eligible for notes")
+    #print(f"Found {len(eligible_posts)} recent posts eligible for notes")
     
     # Filter out posts we've already written notes for
     # new_posts = [post for post in eligible_posts if str(post.post_id) not in existing_note_post_ids]
@@ -81,10 +81,10 @@ def main(
     #     skipped_ids = [str(post.post_id) for post in eligible_posts if str(post.post_id) in existing_note_post_ids]
     #     print(f"  🚀 SKIPPED {skipped_count} posts (already have notes): {', '.join(skipped_ids)}")
     #     print(f"  💰 SAVED EXPENSIVE AI CALLS: Avoided {skipped_count} Gemini API calls!")
-    print(f"  📝 Processing {len(eligible_posts)} posts\n")
+    print(f"📝 Processing {len(eligible_posts)} posts\n")
     
     if len(eligible_posts) == 0:
-        print("No posts to process - we already have notes for all eligible posts!")
+        print("No posts to process - we already have notes for all posts!")
         return
 
     if concurrency > 1:
