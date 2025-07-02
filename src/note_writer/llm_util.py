@@ -47,23 +47,33 @@ def _make_request(prompt, temperature: float = 0.8, max_retries: int = 3):
         except Exception as e:
             error_str = str(e)
             
-            # Handle rate limiting (429 errors)
-            if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
+            # Handle rate limiting (429 errors) and service unavailable (503 errors)
+            if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str or "503" in error_str or "UNAVAILABLE" in error_str:
                 if attempt < max_retries:
                     # Extract retry delay from error if available, otherwise use exponential backoff
-                    wait_time = 60  # Default to 60 seconds for rate limits
-                    if "retryDelay" in error_str and "55s" in error_str:
-                        wait_time = 55
-                    elif attempt > 0:
-                        wait_time = min(60 * (2 ** attempt), 300)  # Exponential backoff, max 5 minutes
+                    if "503" in error_str or "UNAVAILABLE" in error_str:
+                        # For service unavailable, use shorter initial wait time
+                        wait_time = 10 if attempt == 0 else min(30 * (2 ** (attempt - 1)), 120)
+                        print(f"Service unavailable (503). Waiting {wait_time} seconds before retry {attempt + 1}/{max_retries}...")
+                    else:
+                        # For rate limiting, use longer wait times
+                        wait_time = 60  # Default to 60 seconds for rate limits
+                        if "retryDelay" in error_str and "55s" in error_str:
+                            wait_time = 55
+                        elif attempt > 0:
+                            wait_time = min(60 * (2 ** attempt), 300)  # Exponential backoff, max 5 minutes
+                        print(f"Rate limit hit. Waiting {wait_time} seconds before retry {attempt + 1}/{max_retries}...")
                     
-                    print(f"Rate limit hit. Waiting {wait_time} seconds before retry {attempt + 1}/{max_retries}...")
                     time.sleep(wait_time)
                     continue
                 else:
-                    raise Exception(f"Rate limit exceeded after {max_retries} retries. "
-                                  f"Gemini API free tier allows 15 requests per minute. "
-                                  f"Consider upgrading your plan or waiting before retrying.")
+                    if "503" in error_str or "UNAVAILABLE" in error_str:
+                        raise Exception(f"Service unavailable after {max_retries} retries. "
+                                      f"The Gemini API is currently overloaded. Please try again later.")
+                    else:
+                        raise Exception(f"Rate limit exceeded after {max_retries} retries. "
+                                      f"Gemini API free tier allows 15 requests per minute. "
+                                      f"Consider upgrading your plan or waiting before retrying.")
             
             # For other errors, don't retry
             raise Exception(f"Error making Gemini request: {str(e)}")

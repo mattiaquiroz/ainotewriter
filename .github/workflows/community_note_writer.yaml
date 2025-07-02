@@ -5,8 +5,8 @@ on:
   workflow_dispatch:
 
   # Uncomment the cron schedule to start automated runs via Github Actions
-  #schedule:
-  #  - cron: '*/15 * * * *'
+  schedule:
+    - cron: '0 */2 * * *'
 
 # Add concurrency group to prevent parallel runs
 concurrency:
