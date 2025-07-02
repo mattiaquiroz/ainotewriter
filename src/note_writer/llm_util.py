@@ -2,14 +2,14 @@ import os
 from typing import List
 
 import dotenv
-import google.genai as genai
+from google import genai
 
 # Configure Gemini API
-genai.configure(api_key=os.getenv('GOOGLE_API_KEY'))
+client = genai.Client()
 
 # Initialize models - trying correct Flash-Lite model name
-text_model = genai.GenerativeModel('gemini-2.5-flash-lite')
-vision_model = genai.GenerativeModel('gemini-2.5-flash-lite')
+text_model = client.models.get('gemini-2.5-flash-lite')
+vision_model = client.models.get('gemini-2.5-flash-lite')
 
 
 def _make_request(model, prompt, temperature: float = 0.8):
