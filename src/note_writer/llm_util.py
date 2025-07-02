@@ -18,8 +18,13 @@ def _make_request(model, prompt, temperature: float = 0.8):
     Make a request to Gemini API with retry logic
     """
     try:
+        print("List of models that support generateContent:\n")
+        for m in client.models.list():
+            for action in m.supported_actions:
+                if action == "generateContent":
+                    print(m.name)
         response = client.models.generate_content(
-            model='gemini-2.5-flash-lite',
+            model='gemini-2.0-flash',
             contents=prompt,
             config=types.GenerateContentConfig(
                 temperature=temperature,
