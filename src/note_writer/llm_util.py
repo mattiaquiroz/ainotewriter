@@ -7,9 +7,9 @@ import google.generativeai as genai
 # Configure Gemini API
 genai.configure(api_key=os.getenv('GOOGLE_API_KEY'))
 
-# Initialize models - using the latest 2.5 Flash model
-text_model = genai.GenerativeModel('gemini-2.5-flash')
-vision_model = genai.GenerativeModel('gemini-2.5-flash')
+# Initialize models - using 2.5 Flash-Lite for higher quota (1000 vs 250 requests)
+text_model = genai.GenerativeModel('gemini-2.5-flash-lite-06-17')
+vision_model = genai.GenerativeModel('gemini-2.5-flash-lite-06-17')
 
 
 def _make_request(model, prompt, temperature: float = 0.8):
