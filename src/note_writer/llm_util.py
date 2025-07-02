@@ -1,4 +1,5 @@
 import os
+import time
 from typing import List
 
 import dotenv
@@ -8,22 +9,67 @@ from google.genai import types
 # Configure Gemini API
 client = genai.Client()
 
-def _make_request(prompt, temperature: float = 0.8):
+# Rate limiting: Gemini free tier allows 15 requests per minute
+# We'll space requests to stay safely under this limit
+_last_request_time = 0
+_min_request_interval = 4.5  # 4.5 seconds between requests (13 requests per minute to be safe)
+
+def _rate_limit():
+    """Ensure we don't exceed the Gemini API rate limit"""
+    global _last_request_time
+    current_time = time.time()
+    time_since_last = current_time - _last_request_time
+    
+    if time_since_last < _min_request_interval:
+        wait_time = _min_request_interval - time_since_last
+        print(f"Rate limiting: waiting {wait_time:.1f} seconds...")
+        time.sleep(wait_time)
+    
+    _last_request_time = time.time()
+
+def _make_request(prompt, temperature: float = 0.8, max_retries: int = 3):
     """
-    Make a request to Gemini API with retry logic
+    Make a request to Gemini API with retry logic for rate limiting
     """
-    try:
-        response = client.models.generate_content(
-            model='gemini-2.5-flash-lite-preview-06-17',
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                temperature=temperature,
-                max_output_tokens=8192,
+    _rate_limit()  # Apply rate limiting before each request
+    
+    for attempt in range(max_retries + 1):
+        try:
+            response = client.models.generate_content(
+                model='gemini-2.5-flash-lite-preview-06-17',
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    temperature=temperature,
+                    max_output_tokens=8192,
+                )
             )
-        )
-        return response.text
-    except Exception as e:
-        raise Exception(f"Error making Gemini request: {str(e)}")
+            return response.text
+        except Exception as e:
+            error_str = str(e)
+            
+            # Handle rate limiting (429 errors)
+            if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
+                if attempt < max_retries:
+                    # Extract retry delay from error if available, otherwise use exponential backoff
+                    wait_time = 60  # Default to 60 seconds for rate limits
+                    if "retryDelay" in error_str and "55s" in error_str:
+                        wait_time = 55
+                    elif attempt > 0:
+                        wait_time = min(60 * (2 ** attempt), 300)  # Exponential backoff, max 5 minutes
+                    
+                    print(f"Rate limit hit. Waiting {wait_time} seconds before retry {attempt + 1}/{max_retries}...")
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    raise Exception(f"Rate limit exceeded after {max_retries} retries. "
+                                  f"Gemini API free tier allows 15 requests per minute. "
+                                  f"Consider upgrading your plan or waiting before retrying.")
+            
+            # For other errors, don't retry
+            raise Exception(f"Error making Gemini request: {str(e)}")
+    
+    # Should never reach here
+    raise Exception("Unexpected error in _make_request")
 
 
 def get_gemini_response(prompt: str, temperature: float = 0.8):
