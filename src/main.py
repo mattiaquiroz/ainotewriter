@@ -7,6 +7,7 @@ from cnapi.submit_note import submit_note, get_notes_written_by_user
 from data_models import NoteResult, Post
 import dotenv
 from note_writer.write_note import research_post_and_write_note
+from google import genai
 
 
 def _worker(
@@ -60,6 +61,14 @@ def main(
     Get up to `num_posts` recent posts eligible for notes and write notes for them.
     If `dry_run` is True, do not submit notes to the API, just print them to the console.
     """
+
+    client = genai.Client()
+
+    print("List of models that support generateContent:\n")
+    for m in client.models.list():
+        for action in m.supported_actions:
+            if action == "generateContent":
+                print(m.name)
 
     print(f"Getting up to {num_posts} recent posts eligible for notes")
     
