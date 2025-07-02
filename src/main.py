@@ -35,6 +35,9 @@ def _worker(
             f"\n*MISLEADING TAGS:*\n  {[tag.value for tag in note_result.note.misleading_tags]}\n"
         )
 
+    # Check if this is a permanent condition that should be added to Gist
+    should_add_to_gist = False
+    
     # Only add to Gist if we have a note AND no refusal AND no error
     if note_result.note is not None and not note_result.refusal and not note_result.error and not dry_run:
         try:
@@ -44,24 +47,32 @@ def _worker(
                 verbose_if_failed=False,
             )
             log_strings.append("\n*SUCCESSFULLY SUBMITTED NOTE*\n")
-            # Add the post ID to the Gist to track that it's been processed
-            if add_processed_post_id(str(post.post_id)):
-                log_strings.append(f"*ADDED TO GIST*: Post {str(post.post_id)} successfully added to processed list\n")
-            else:
-                log_strings.append("*GIST WARNING*: Failed to add post ID to processed list\n")
+            should_add_to_gist = True
         except Exception as e:
             error_str = str(e)
             if "already created a note" in error_str.lower():
                 log_strings.append("\n*ALREADY HAVE NOTE*: We already wrote a note on this post; moving on.\n")
-                # Still add to Gist since we know it's been processed
-                if add_processed_post_id(str(post.post_id)):
-                    log_strings.append(f"*ADDED TO GIST*: Post {str(post.post_id)} successfully added to processed list\n")
-                else:
-                    log_strings.append("*GIST WARNING*: Failed to add post ID to processed list\n")
+                should_add_to_gist = True
             else:
                 log_strings.append(f"\n*ERROR SUBMITTING NOTE*: {error_str}\n")
-    # If there's a refusal, error, or no note was generated, we DON'T add to Gist
-    # This allows the post to be retried in future runs
+    
+    # Also add to Gist for permanent conditions that won't change on retry
+    elif not dry_run:
+        if note_result.error and "Video not supported yet" in note_result.error:
+            log_strings.append("*PERMANENT ERROR*: Video not supported - adding to processed list\n")
+            should_add_to_gist = True
+        elif note_result.refusal and "NO NOTE NEEDED" in note_result.refusal:
+            log_strings.append("*PERMANENT REFUSAL*: No note needed - adding to processed list\n")
+            should_add_to_gist = True
+    
+    # Add to Gist if we determined it should be added
+    if should_add_to_gist:
+        if add_processed_post_id(str(post.post_id)):
+            log_strings.append(f"*ADDED TO GIST*: Post {str(post.post_id)} successfully added to processed list\n")
+        else:
+            log_strings.append("*GIST WARNING*: Failed to add post ID to processed list\n")
+    
+    # If there's a temporary refusal/error, we DON'T add to Gist to allow retries
     print("".join(log_strings) + "\n")
 
 
