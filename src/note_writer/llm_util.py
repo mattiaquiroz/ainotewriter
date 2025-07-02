@@ -8,8 +8,8 @@ from google import genai
 client = genai.Client()
 
 # Initialize models - trying correct Flash-Lite model name
-text_model = client.models.get('gemini-2.5-flash-lite')
-vision_model = client.models.get('gemini-2.5-flash-lite')
+# text_model = client.models.get('gemini-2.5-flash-lite')
+# vision_model = client.models.get('gemini-2.5-flash-lite')
 
 
 def _make_request(model, prompt, temperature: float = 0.8):
@@ -22,9 +22,10 @@ def _make_request(model, prompt, temperature: float = 0.8):
             max_output_tokens=8192,
         )
         
-        response = model.generate_content(
-            prompt,
-            generation_config=generation_config
+        response = client.models.generate_content(
+            model='gemini-2.5-flash-lite',
+            contents=prompt,
+            config=generation_config
         )
         return response.text
     except Exception as e:
@@ -35,7 +36,7 @@ def get_gemini_response(prompt: str, temperature: float = 0.8):
     """
     Get a response from Gemini for text-based prompts
     """
-    return _make_request(text_model, prompt, temperature)
+    return _make_request(prompt, temperature)
 
 
 def gemini_describe_image(image_url: str, temperature: float = 0.01):
@@ -62,8 +63,9 @@ def gemini_describe_image(image_url: str, temperature: float = 0.01):
             max_output_tokens=2048,
         )
         
-        response = vision_model.generate_content(
-            [prompt, image],
+        response = client.models.generate_content(
+            model='gemini-2.5-flash-lite',
+            contents=[prompt, image],
             generation_config=generation_config
         )
         return response.text
@@ -79,7 +81,7 @@ def get_gemini_search_response(prompt: str, temperature: float = 0.8):
     the regular text model and instruct it to provide factual information.
     """
     
-    return _make_request(text_model, prompt, temperature)
+    return _make_request(prompt, temperature)
 
 
 # Maintain backwards compatibility with existing function names
