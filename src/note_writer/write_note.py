@@ -1,9 +1,9 @@
 import re
 from data_models import NoteResult, Post, ProposedMisleadingNote
 from note_writer.llm_util import (
-    get_grok_live_search_response,
-    get_grok_response,
-    grok_describe_image,
+    get_gemini_search_response,
+    get_gemini_response,
+    gemini_describe_image,
 )
 from note_writer.misleading_tags import get_misleading_tags
 
@@ -106,7 +106,7 @@ def _summarize_images(post: Post) -> str:
     images_summary = ""
     for i, media in enumerate(post.media):
         if media.media_type == "photo":
-            image_description = grok_describe_image(media.url)
+            image_description = gemini_describe_image(media.url)
             images_summary += f"Image {i}: {image_description}\n\n"
         elif media.media_type == "video":
             raise ValueError("Video not supported yet")
@@ -124,10 +124,10 @@ def research_post_and_write_note(
         return NoteResult(post=post, error=str(e))
 
     search_prompt = _get_prompt_for_live_search(post, images_summary)
-    search_results = get_grok_live_search_response(search_prompt)
+    search_results = get_gemini_search_response(search_prompt)
     note_prompt = _get_prompt_for_note_writing(post, images_summary, search_results)
 
-    note_or_refusal_str = get_grok_response(note_prompt)
+    note_or_refusal_str = get_gemini_response(note_prompt)
 
     if ("NO NOTE NEEDED" in note_or_refusal_str) or (
         "NOT ENOUGH EVIDENCE TO WRITE A GOOD COMMUNITY NOTE" in note_or_refusal_str

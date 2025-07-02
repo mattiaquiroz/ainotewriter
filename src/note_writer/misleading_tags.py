@@ -3,7 +3,7 @@ import re
 from typing import List
 
 from data_models import MisleadingTag, Post
-from note_writer.llm_util import get_grok_response
+from note_writer.llm_util import get_gemini_response
 
 
 def get_misleading_tags(
@@ -14,7 +14,7 @@ def get_misleading_tags(
     )
     while retries > 0:
         try:
-            misleading_why_tags_str = get_grok_response(misleading_why_tags_prompt)
+            misleading_why_tags_str = get_gemini_response(misleading_why_tags_prompt)
             
             # Try to extract JSON from the response more robustly
             json_data = _extract_json_from_response(misleading_why_tags_str)

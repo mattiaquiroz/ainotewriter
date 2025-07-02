@@ -144,22 +144,6 @@ def get_gemini_search_response(prompt: str, temperature: float = 0.8):
     return _make_request(prompt, temperature)
 
 
-# Maintain backwards compatibility with existing function names
-def get_grok_response(prompt: str, temperature: float = 0.8):
-    """Backwards compatibility wrapper for get_gemini_response"""
-    return get_gemini_response(prompt, temperature)
-
-
-def grok_describe_image(image_url: str, temperature: float = 0.01):
-    """Backwards compatibility wrapper for gemini_describe_image"""
-    return gemini_describe_image(image_url, temperature)
-
-
-def get_grok_live_search_response(prompt: str, temperature: float = 0.8):
-    """Backwards compatibility wrapper for get_gemini_search_response"""
-    return get_gemini_search_response(prompt, temperature)
-
-
 if __name__ == "__main__":
     dotenv.load_dotenv()
     print(
