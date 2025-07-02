@@ -8,6 +8,12 @@ from google.genai import types
 # Configure Gemini API
 client = genai.Client()
 
+print("List of models that support generateContent:\n")
+for m in client.models.list():
+    for action in m.supported_actions:
+        if action == "generateContent":
+            print(m.name)
+
 # Initialize models - trying correct Flash-Lite model name
 # text_model = client.models.get('gemini-2.5-flash-lite')
 # vision_model = client.models.get('gemini-2.5-flash-lite')
@@ -18,13 +24,8 @@ def _make_request(model, prompt, temperature: float = 0.8):
     Make a request to Gemini API with retry logic
     """
     try:
-        print("List of models that support generateContent:\n")
-        for m in client.models.list():
-            for action in m.supported_actions:
-                if action == "generateContent":
-                    print(m.name)
         response = client.models.generate_content(
-            model='gemini-2.0-flash',
+            model='gemini-2.5-flash-lite',
             contents=prompt,
             config=types.GenerateContentConfig(
                 temperature=temperature,
