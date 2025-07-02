@@ -46,7 +46,7 @@ def _worker(
             log_strings.append("\n*SUCCESSFULLY SUBMITTED NOTE*\n")
             # Add the post ID to the Gist to track that it's been processed
             if add_processed_post_id(str(post.post_id)):
-                log_strings.append("*ADDED TO GIST*: Post ID added to processed list\n")
+                log_strings.append(f"*ADDED TO GIST*: Post {str(post.post_id)} successfully added to processed list\n")
             else:
                 log_strings.append("*GIST WARNING*: Failed to add post ID to processed list\n")
         except Exception as e:
@@ -55,7 +55,7 @@ def _worker(
                 log_strings.append("\n*ALREADY HAVE NOTE*: We already wrote a note on this post; moving on.\n")
                 # Still add to Gist since we know it's been processed
                 if add_processed_post_id(str(post.post_id)):
-                    log_strings.append("*ADDED TO GIST*: Post ID added to processed list\n")
+                    log_strings.append(f"*ADDED TO GIST*: Post {str(post.post_id)} successfully added to processed list\n")
                 else:
                     log_strings.append("*GIST WARNING*: Failed to add post ID to processed list\n")
             else:

@@ -98,7 +98,7 @@ def add_processed_post_id(post_id: str) -> bool:
                                     json=update_data)
             response.raise_for_status()
             
-            print(f"Successfully added post ID {post_id} to Gist")
+            #print(f"Successfully added post ID {post_id} to Gist")
             return True
         else:
             print(f"Post ID {post_id} already exists in Gist")
