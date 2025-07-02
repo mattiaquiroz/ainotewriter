@@ -27,30 +27,21 @@ def _rate_limit():
     
     _last_request_time = time.time()
 
-def _make_request(prompt, temperature: float = 0.8, max_retries: int = 3):
+def _retry_with_backoff(api_call_func, max_retries: int = 3):
     """
-    Make a request to Gemini API with retry logic for rate limiting
+    Execute an API call with retry logic for rate limiting and service errors
     """
     _rate_limit()  # Apply rate limiting before each request
     
     for attempt in range(max_retries + 1):
         try:
-            response = client.models.generate_content(
-                model='gemini-2.5-flash-lite-preview-06-17',
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    temperature=temperature,
-                    max_output_tokens=8192,
-                )
-            )
-            return response.text
+            return api_call_func()
         except Exception as e:
             error_str = str(e)
             
             # Handle rate limiting (429 errors) and service unavailable (503 errors)
             if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str or "503" in error_str or "UNAVAILABLE" in error_str:
                 if attempt < max_retries:
-                    # Extract retry delay from error if available, otherwise use exponential backoff
                     if "503" in error_str or "UNAVAILABLE" in error_str:
                         # For service unavailable, use shorter initial wait time
                         wait_time = 10 if attempt == 0 else min(30 * (2 ** (attempt - 1)), 120)
@@ -79,7 +70,24 @@ def _make_request(prompt, temperature: float = 0.8, max_retries: int = 3):
             raise Exception(f"Error making Gemini request: {str(e)}")
     
     # Should never reach here
-    raise Exception("Unexpected error in _make_request")
+    raise Exception("Unexpected error in _retry_with_backoff")
+
+def _make_request(prompt, temperature: float = 0.8, max_retries: int = 3):
+    """
+    Make a request to Gemini API with retry logic for rate limiting
+    """
+    def api_call():
+        response = client.models.generate_content(
+            model='gemini-2.5-flash-lite-preview-06-17',
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                temperature=temperature,
+                max_output_tokens=8192,
+            )
+        )
+        return response.text
+    
+    return _retry_with_backoff(api_call, max_retries)
 
 
 def get_gemini_response(prompt: str, temperature: float = 0.8):
@@ -89,7 +97,7 @@ def get_gemini_response(prompt: str, temperature: float = 0.8):
     return _make_request(prompt, temperature)
 
 
-def gemini_describe_image(image_url: str, temperature: float = 0.01):
+def gemini_describe_image(image_url: str, temperature: float = 0.01, max_retries: int = 3):
     """
     Describe an image using Gemini's vision capabilities
     """
@@ -108,15 +116,20 @@ def gemini_describe_image(image_url: str, temperature: float = 0.01):
         
         prompt = "What's in this image? Provide a detailed description."
         
-        response = client.models.generate_content(
-            model='gemini-2.5-flash-lite-preview-06-17',
-            contents=[prompt, image],
-            config=types.GenerateContentConfig(
-                temperature=temperature,
-                max_output_tokens=2048,
+        # Define the API call function
+        def api_call():
+            response = client.models.generate_content(
+                model='gemini-2.5-flash-lite-preview-06-17',
+                contents=[prompt, image],
+                config=types.GenerateContentConfig(
+                    temperature=temperature,
+                    max_output_tokens=2048,
+                )
             )
-        )
-        return response.text
+            return response.text
+        
+        # Use shared retry logic
+        return _retry_with_backoff(api_call, max_retries)
         
     except Exception as e:
         raise Exception(f"Error describing image with Gemini: {str(e)}")
