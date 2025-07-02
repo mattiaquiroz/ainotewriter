@@ -17,15 +17,13 @@ def _make_request(model, prompt, temperature: float = 0.8):
     Make a request to Gemini API with retry logic
     """
     try:
-        generation_config = genai.types.GenerationConfig(
-            temperature=temperature,
-            max_output_tokens=8192,
-        )
-        
         response = client.models.generate_content(
             model='gemini-2.5-flash-lite',
             contents=prompt,
-            config=generation_config
+            config=types.GenerateContentConfig(
+                temperature=temperature,
+                max_output_tokens=8192,
+            )
         )
         return response.text
     except Exception as e:
@@ -58,15 +56,13 @@ def gemini_describe_image(image_url: str, temperature: float = 0.01):
         
         prompt = "What's in this image? Provide a detailed description."
         
-        generation_config = genai.types.GenerationConfig(
-            temperature=temperature,
-            max_output_tokens=2048,
-        )
-        
         response = client.models.generate_content(
             model='gemini-2.5-flash-lite',
             contents=[prompt, image],
-            config=generation_config
+            config=types.GenerateContentConfig(
+                temperature=temperature,
+                max_output_tokens=2048,
+            )
         )
         return response.text
         
