@@ -8,7 +8,7 @@ from google.genai import types
 # Configure Gemini API
 client = genai.Client()
 
-def _make_request(model, prompt, temperature: float = 0.8):
+def _make_request(prompt, temperature: float = 0.8):
     """
     Make a request to Gemini API with retry logic
     """
