@@ -61,7 +61,7 @@ def main(
     If `dry_run` is True, do not submit notes to the API, just print them to the console.
     """
 
-    print(f"Getting up to {num_posts} recent posts eligible for notes")
+    #print(f"Getting up to {num_posts} recent posts eligible for notes")
     
     # First, get all posts we've already written notes for to save expensive API calls
     # print("Fetching existing notes to avoid duplicate work...")

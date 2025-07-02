@@ -10,7 +10,6 @@ from google.genai import types
 client = genai.Client()
 
 # Rate limiting: Gemini free tier allows 15 requests per minute
-# We'll space requests to stay safely under this limit
 _last_request_time = 0
 _min_request_interval = 4.5  # 4.5 seconds between requests (13 requests per minute to be safe)
 
