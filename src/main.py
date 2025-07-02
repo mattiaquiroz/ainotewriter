@@ -7,7 +7,7 @@ from cnapi.submit_note import submit_note, get_notes_written_by_user
 from data_models import NoteResult, Post
 import dotenv
 from note_writer.write_note import research_post_and_write_note
-from google import genai
+import google.generativeai as genai
 
 
 def _worker(
