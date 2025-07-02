@@ -2,7 +2,7 @@ import os
 from typing import List
 
 import dotenv
-import google.generativeai as genai
+import google.genai as genai
 
 # Configure Gemini API
 genai.configure(api_key=os.getenv('GOOGLE_API_KEY'))
