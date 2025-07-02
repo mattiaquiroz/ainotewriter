@@ -35,7 +35,8 @@ def _worker(
             f"\n*MISLEADING TAGS:*\n  {[tag.value for tag in note_result.note.misleading_tags]}\n"
         )
 
-    if note_result.note is not None and not dry_run:
+    # Only add to Gist if we have a note AND no refusal AND no error
+    if note_result.note is not None and not note_result.refusal and not note_result.error and not dry_run:
         try:
             submit_note(
                 note=note_result.note,
@@ -59,6 +60,8 @@ def _worker(
                     log_strings.append("*GIST WARNING*: Failed to add post ID to processed list\n")
             else:
                 log_strings.append(f"\n*ERROR SUBMITTING NOTE*: {error_str}\n")
+    # If there's a refusal, error, or no note was generated, we DON'T add to Gist
+    # This allows the post to be retried in future runs
     print("".join(log_strings) + "\n")
 
 
