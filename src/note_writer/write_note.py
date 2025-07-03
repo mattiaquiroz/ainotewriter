@@ -121,19 +121,15 @@ def research_post_and_write_note(
     if search_results is None:
         return NoteResult(post=post, error="Failed to get search results from Gemini API")
     
-    # NEW: Verify and filter links in search results
-    print(f"\n🔗 Verifying links for post {post.post_id}...")
+    # Verify and filter links in search results
     filtered_search_results, valid_urls = verify_and_filter_links(search_results, post.text)
     
     # If no valid sources found, cancel the note
     if filtered_search_results is None or len(valid_urls) == 0:
-        print(f"❌ No valid sources found for post {post.post_id} - canceling note")
         return NoteResult(
             post=post, 
             refusal="NO VALID SOURCES FOUND: All links in search results were either broken, irrelevant, or inaccessible. Cannot write a reliable Community Note without credible sources."
         )
-    
-    print(f"✅ Found {len(valid_urls)} valid sources - proceeding with note generation")
     
     # Use filtered search results for note writing
     note_prompt = _get_prompt_for_note_writing(post, images_summary, filtered_search_results)

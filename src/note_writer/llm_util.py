@@ -392,17 +392,17 @@ def verify_and_filter_links(search_results: str, original_query: str) -> Tuple[O
     urls = extract_urls_from_text(search_results)
     
     if not urls:
-        print("  No URLs found in search results")
+        print("  ❌ No URLs found in search results")
         return search_results, []
     
-    print(f"  Found {len(urls)} URLs to verify")
+    print(f"  📋 Found {len(urls)} URLs to verify")
     
     valid_urls = []
     url_validation_results = {}
     
     # Verify each URL
     for i, url in enumerate(urls):
-        print(f"  Checking URL {i+1}/{len(urls)}: {url}")
+        print(f"  🔗 Checking URL {i+1}/{len(urls)}: {url}")
         
         # Fetch page content
         content, status_code, error_msg = fetch_page_content(url)
@@ -427,7 +427,10 @@ def verify_and_filter_links(search_results: str, original_query: str) -> Tuple[O
     
     # Filter the search results to only include valid URLs
     if len(valid_urls) == 0:
+        print("❌ No valid sources found - canceling note generation")
         return None, []  # Return None to indicate no valid sources
+    
+    print(f"✅ Found {len(valid_urls)} valid sources - proceeding with note generation")
     
     # Remove invalid URLs from the search results text
     filtered_results = search_results
