@@ -1,6 +1,9 @@
 import os
 import time
-from typing import List
+import re
+import requests
+from typing import List, Dict, Optional, Tuple
+from urllib.parse import urlparse, urljoin
 
 import dotenv
 from google import genai
@@ -269,6 +272,171 @@ def get_gemini_search_response(prompt: str, temperature: float = 0.8):
     """
     
     return _make_request(prompt, temperature)
+
+
+def extract_urls_from_text(text: str) -> List[str]:
+    """
+    Extract all URLs from text using regex pattern
+    """
+    # Pattern to match URLs with various protocols and formats
+    url_pattern = r'https?://[^\s<>"{}|\\^`\[\]]+|www\.[^\s<>"{}|\\^`\[\]]+|[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]*\.[a-zA-Z]{2,}(?:/[^\s<>"{}|\\^`\[\]]*)?'
+    urls = re.findall(url_pattern, text)
+    
+    # Normalize URLs - add https:// if missing
+    normalized_urls = []
+    for url in urls:
+        if not url.startswith(('http://', 'https://')):
+            if url.startswith('www.'):
+                normalized_urls.append(f'https://{url}')
+            else:
+                normalized_urls.append(f'https://{url}')
+        else:
+            normalized_urls.append(url)
+    
+    return normalized_urls
+
+
+def fetch_page_content(url: str, timeout: int = 10) -> Tuple[Optional[str], int, str]:
+    """
+    Fetch page content from URL and return (content, status_code, error_message)
+    Returns (None, status_code, error_message) if failed
+    """
+    try:
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        
+        response = requests.get(url, timeout=timeout, headers=headers, allow_redirects=True)
+        
+        # Check if we got a successful response
+        if response.status_code == 200:
+            # Try to get text content
+            content = response.text
+            # Limit content length to avoid overwhelming Gemini
+            if len(content) > 50000:  # Limit to ~50KB
+                content = content[:50000] + "... [content truncated]"
+            return content, response.status_code, ""
+        else:
+            return None, response.status_code, f"HTTP {response.status_code}"
+            
+    except requests.exceptions.Timeout:
+        return None, 0, "Request timeout"
+    except requests.exceptions.ConnectionError:
+        return None, 0, "Connection error"
+    except requests.exceptions.TooManyRedirects:
+        return None, 0, "Too many redirects"
+    except Exception as e:
+        return None, 0, f"Error: {str(e)}"
+
+
+def validate_page_content_with_gemini(url: str, content: str, original_claim: str) -> Tuple[bool, str]:
+    """
+    Use Gemini to validate if page content is relevant and not a 404/error page
+    Returns (is_valid, explanation)
+    """
+    prompt = f"""You are validating whether a web page is useful as a source for fact-checking.
+
+Original claim/context: {original_claim[:500]}...
+
+URL: {url}
+
+Page content (first part):
+{content[:3000]}...
+
+Please analyze this page and respond with exactly one of these formats:
+
+VALID: [brief explanation of why this page is a good source]
+INVALID: [brief explanation of why this page is not useful - e.g., 404 error, irrelevant content, broken page, etc.]
+
+The page should be considered INVALID if:
+- It's a 404 or error page
+- It's completely irrelevant to the original claim
+- It's a generic homepage without specific information
+- It contains mostly ads or navigation without substantive content
+- It's broken or corrupted content
+
+The page should be considered VALID if:
+- It contains relevant factual information related to the claim
+- It's from a recognizable news source, government site, or credible organization
+- It has substantive content that could be used for fact-checking
+"""
+
+    try:
+        response = get_gemini_response(prompt, temperature=0.3)
+        if response is None:
+            return False, "Failed to get validation response from Gemini"
+        
+        response = response.strip()
+        if response.startswith("VALID:"):
+            return True, response[6:].strip()
+        elif response.startswith("INVALID:"):
+            return False, response[8:].strip()
+        else:
+            # If format is unexpected, err on the side of caution
+            return False, f"Unexpected validation response format: {response[:100]}"
+            
+    except Exception as e:
+        return False, f"Error validating with Gemini: {str(e)}"
+
+
+def verify_and_filter_links(search_results: str, original_query: str) -> Tuple[Optional[str], List[str]]:
+    """
+    Extract URLs from search results, verify they're valid and relevant, 
+    and return filtered search results with only valid links
+    
+    Returns (filtered_search_results, valid_urls)
+    """
+    print("🔍 Extracting and verifying links from search results...")
+    
+    # Extract all URLs from the search results
+    urls = extract_urls_from_text(search_results)
+    
+    if not urls:
+        print("  No URLs found in search results")
+        return search_results, []
+    
+    print(f"  Found {len(urls)} URLs to verify")
+    
+    valid_urls = []
+    url_validation_results = {}
+    
+    # Verify each URL
+    for i, url in enumerate(urls):
+        print(f"  Checking URL {i+1}/{len(urls)}: {url}")
+        
+        # Fetch page content
+        content, status_code, error_msg = fetch_page_content(url)
+        
+        if content is None:
+            print(f"    ❌ Failed to fetch: {error_msg}")
+            url_validation_results[url] = (False, f"Failed to fetch: {error_msg}")
+            continue
+        
+        # Validate content with Gemini
+        is_valid, explanation = validate_page_content_with_gemini(url, content, original_query)
+        
+        if is_valid:
+            print(f"    ✅ Valid: {explanation}")
+            valid_urls.append(url)
+            url_validation_results[url] = (True, explanation)
+        else:
+            print(f"    ❌ Invalid: {explanation}")
+            url_validation_results[url] = (False, explanation)
+    
+    print(f"📊 Link verification complete: {len(valid_urls)}/{len(urls)} URLs are valid")
+    
+    # Filter the search results to only include valid URLs
+    if len(valid_urls) == 0:
+        return None, []  # Return None to indicate no valid sources
+    
+    # Remove invalid URLs from the search results text
+    filtered_results = search_results
+    for url in urls:
+        if url not in valid_urls:
+            # Remove the invalid URL and surrounding context
+            filtered_results = filtered_results.replace(url, "[REMOVED: Invalid/Irrelevant Source]")
+    
+    return filtered_results, valid_urls
 
 
 if __name__ == "__main__":

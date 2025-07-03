@@ -4,6 +4,7 @@ from note_writer.llm_util import (
     get_gemini_search_response,
     get_gemini_response,
     gemini_describe_image,
+    verify_and_filter_links,
 )
 from note_writer.misleading_tags import get_misleading_tags
 
@@ -66,8 +67,18 @@ def _get_prompt_for_note_writing(post: Post, images_summary: str, search_results
 
 def _get_prompt_for_live_search(post: Post, images_summary: str = ""):
     return f"""Below is a post on X. Conduct research to determine if the post is potentially misleading.
-        Your response MUST include URLs/links directly in the text next to the claim they support. Do NOT include any unnecessary characters like "[Source]", just provide the plain URL.
-        Only cite sources that are reliable, up-to-date, and accessible (avoid 404 errors or outdated information). If a source is broken or clearly outdated (e.g., refers to past events that are no longer relevant), do NOT use it.
+        
+        CRITICAL REQUIREMENTS for sources:
+        - Your response MUST include specific, direct URLs/links next to the claims they support
+        - Only cite sources from reputable news outlets, government websites, academic institutions, or well-established organizations
+        - Ensure all URLs are complete, properly formatted, and likely to be accessible
+        - Prefer recent sources (within the last 2 years unless historical context is needed)
+        - Do NOT include generic domain names or incomplete URLs
+        - Do NOT include any formatting like "[Source]" - just provide the plain, complete URL
+
+        Focus on finding sources that would be considered trustworthy across different political perspectives.
+        If you cannot find reliable, specific sources for the claims in the post, say so explicitly.
+
         Post text:
         ```
         {post.text}
@@ -110,7 +121,22 @@ def research_post_and_write_note(
     if search_results is None:
         return NoteResult(post=post, error="Failed to get search results from Gemini API")
     
-    note_prompt = _get_prompt_for_note_writing(post, images_summary, search_results)
+    # NEW: Verify and filter links in search results
+    print(f"\n🔗 Verifying links for post {post.post_id}...")
+    filtered_search_results, valid_urls = verify_and_filter_links(search_results, post.text)
+    
+    # If no valid sources found, cancel the note
+    if filtered_search_results is None or len(valid_urls) == 0:
+        print(f"❌ No valid sources found for post {post.post_id} - canceling note")
+        return NoteResult(
+            post=post, 
+            refusal="NO VALID SOURCES FOUND: All links in search results were either broken, irrelevant, or inaccessible. Cannot write a reliable Community Note without credible sources."
+        )
+    
+    print(f"✅ Found {len(valid_urls)} valid sources - proceeding with note generation")
+    
+    # Use filtered search results for note writing
+    note_prompt = _get_prompt_for_note_writing(post, images_summary, filtered_search_results)
 
     note_or_refusal_str = get_gemini_response(note_prompt)
 
@@ -135,4 +161,5 @@ def research_post_and_write_note(
             note_text=formatted_note_text,
             misleading_tags=misleading_tags,
         ),
+        images_summary=images_summary,
     )
