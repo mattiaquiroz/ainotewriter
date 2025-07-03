@@ -32,6 +32,8 @@ def _retry_with_backoff(api_call_func, max_retries: int = 3):
     """
     _rate_limit()  # Apply rate limiting before each request
     
+    is_content_filtered = False  # Track if error is due to content filtering
+    
     for attempt in range(max_retries + 1):
         try:
             return api_call_func()
@@ -41,9 +43,11 @@ def _retry_with_backoff(api_call_func, max_retries: int = 3):
             # Handle retryable errors:
             # - Rate limiting (429 errors)
             # - Service unavailable (503 errors) 
-            # - None response text (content filtering or temporary model issues)
+            # - None response text (only if NOT content filtered)
             # - Other temporary API issues
-            is_retryable = any([
+            # Note: Content filtering blocks are permanent and should not be retried
+            is_content_filtered = "CONTENT_FILTERED:" in error_str
+            is_retryable = not is_content_filtered and any([
                 "429" in error_str,
                 "RESOURCE_EXHAUSTED" in error_str,
                 "503" in error_str,
@@ -97,7 +101,13 @@ def _retry_with_backoff(api_call_func, max_retries: int = 3):
                     raise Exception(f"Temporary API issue persisted after {max_retries} retries: {error_str}")
             else:
                 # Non-retryable error, fail immediately
-                raise Exception(f"Error making Gemini request: {str(e)}")
+                if is_content_filtered:
+                    raise Exception(f"Gemini API blocked your content due to safety filters. "
+                                  f"The prompt contains content that violates Gemini's usage policies. "
+                                  f"Please review and modify your input to avoid prohibited content. "
+                                  f"Details: {str(e)}")
+                else:
+                    raise Exception(f"Error making Gemini request: {str(e)}")
     
     # Should never reach here
     raise Exception("Unexpected error in _retry_with_backoff")
@@ -120,25 +130,38 @@ def _make_request(prompt, temperature: float = 0.8, max_retries: int = 3):
         if response.text is None:
             # Try to get more information about why the response is None
             error_details = []
+            is_content_filtered = False
+            
+            # Check for prompt feedback first (this is where content filtering blocks are reported)
+            if hasattr(response, 'prompt_feedback'):
+                if hasattr(response.prompt_feedback, 'block_reason'):
+                    block_reason = str(response.prompt_feedback.block_reason)
+                    error_details.append(f"block_reason: {block_reason}")
+                    # Check if this is a content filtering block (permanent, non-retryable)
+                    if 'PROHIBITED_CONTENT' in block_reason or 'SAFETY' in block_reason:
+                        is_content_filtered = True
+                if hasattr(response.prompt_feedback, 'safety_ratings'):
+                    error_details.append(f"prompt_safety_ratings: {response.prompt_feedback.safety_ratings}")
             
             # Check if there are any candidates
             if hasattr(response, 'candidates') and response.candidates:
                 candidate = response.candidates[0]
                 if hasattr(candidate, 'finish_reason'):
-                    error_details.append(f"finish_reason: {candidate.finish_reason}")
+                    finish_reason = str(candidate.finish_reason)
+                    error_details.append(f"finish_reason: {finish_reason}")
+                    # Also check finish reason for safety blocks
+                    if 'SAFETY' in finish_reason or 'PROHIBITED' in finish_reason:
+                        is_content_filtered = True
                 if hasattr(candidate, 'safety_ratings'):
                     error_details.append(f"safety_ratings: {candidate.safety_ratings}")
-            
-            # Check for prompt feedback
-            if hasattr(response, 'prompt_feedback'):
-                if hasattr(response.prompt_feedback, 'block_reason'):
-                    error_details.append(f"block_reason: {response.prompt_feedback.block_reason}")
-                if hasattr(response.prompt_feedback, 'safety_ratings'):
-                    error_details.append(f"prompt_safety_ratings: {response.prompt_feedback.safety_ratings}")
             
             error_msg = "Gemini API returned None response text"
             if error_details:
                 error_msg += f" ({'; '.join(error_details)})"
+            
+            # If this is a content filtering issue, mark it as non-retryable
+            if is_content_filtered:
+                error_msg = f"CONTENT_FILTERED: {error_msg}"
             
             print(f"DEBUG: {error_msg}")
             print(f"DEBUG: Full response object: {response}")
@@ -191,25 +214,38 @@ def gemini_describe_image(image_url: str, temperature: float = 0.01, max_retries
             if response.text is None:
                 # Try to get more information about why the response is None
                 error_details = []
+                is_content_filtered = False
+                
+                # Check for prompt feedback first (this is where content filtering blocks are reported)
+                if hasattr(response, 'prompt_feedback'):
+                    if hasattr(response.prompt_feedback, 'block_reason'):
+                        block_reason = str(response.prompt_feedback.block_reason)
+                        error_details.append(f"block_reason: {block_reason}")
+                        # Check if this is a content filtering block (permanent, non-retryable)
+                        if 'PROHIBITED_CONTENT' in block_reason or 'SAFETY' in block_reason:
+                            is_content_filtered = True
+                    if hasattr(response.prompt_feedback, 'safety_ratings'):
+                        error_details.append(f"prompt_safety_ratings: {response.prompt_feedback.safety_ratings}")
                 
                 # Check if there are any candidates
                 if hasattr(response, 'candidates') and response.candidates:
                     candidate = response.candidates[0]
                     if hasattr(candidate, 'finish_reason'):
-                        error_details.append(f"finish_reason: {candidate.finish_reason}")
+                        finish_reason = str(candidate.finish_reason)
+                        error_details.append(f"finish_reason: {finish_reason}")
+                        # Also check finish reason for safety blocks
+                        if 'SAFETY' in finish_reason or 'PROHIBITED' in finish_reason:
+                            is_content_filtered = True
                     if hasattr(candidate, 'safety_ratings'):
                         error_details.append(f"safety_ratings: {candidate.safety_ratings}")
-                
-                # Check for prompt feedback
-                if hasattr(response, 'prompt_feedback'):
-                    if hasattr(response.prompt_feedback, 'block_reason'):
-                        error_details.append(f"block_reason: {response.prompt_feedback.block_reason}")
-                    if hasattr(response.prompt_feedback, 'safety_ratings'):
-                        error_details.append(f"prompt_safety_ratings: {response.prompt_feedback.safety_ratings}")
                 
                 error_msg = "Gemini API returned None response text for image description"
                 if error_details:
                     error_msg += f" ({'; '.join(error_details)})"
+                
+                # If this is a content filtering issue, mark it as non-retryable
+                if is_content_filtered:
+                    error_msg = f"CONTENT_FILTERED: {error_msg}"
                 
                 print(f"DEBUG: {error_msg}")
                 print(f"DEBUG: Full response object: {response}")
