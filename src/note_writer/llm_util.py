@@ -11,7 +11,7 @@ client = genai.Client()
 
 # Rate limiting: Gemini free tier allows 15 requests per minute
 _last_request_time = 0
-_min_request_interval = 13  # 13 seconds between requests (4 requests per minute to be safe)
+_min_request_interval = 7  # 7 seconds between requests (8 requests per minute to be safe)
 
 def _rate_limit():
     """Ensure we don't exceed the Gemini API rate limit"""
@@ -118,7 +118,7 @@ def _make_request(prompt, temperature: float = 0.8, max_retries: int = 3):
     """
     def api_call():
         response = client.models.generate_content(
-            model='gemini-2.5-pro',
+            model='gemini-2.5-flash',
             contents=prompt,
             config=types.GenerateContentConfig(
                 temperature=temperature,
@@ -202,7 +202,7 @@ def gemini_describe_image(image_url: str, temperature: float = 0.01, max_retries
         # Define the API call function
         def api_call():
             response = client.models.generate_content(
-                model='gemini-2.5-pro',
+                model='gemini-2.5-flash',
                 contents=[prompt, image],
                 config=types.GenerateContentConfig(
                     temperature=temperature,
