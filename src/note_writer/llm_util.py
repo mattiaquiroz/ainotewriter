@@ -280,7 +280,8 @@ def extract_urls_from_text(text: str) -> List[str]:
     """
     # Pattern to match URLs with various protocols and formats
     # Excludes common punctuation that might be at the end of URLs in text
-    url_pattern = r'https?://[^\s<>"{}|\\^`\[\]()]+(?:\([^\s<>"{}|\\^`\[\]()]*\))?[^\s<>"{}|\\^`\[\]()]*|www\.[^\s<>"{}|\\^`\[\]()]+|[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]*\.[a-zA-Z]{2,}(?:/[^\s<>"{}|\\^`\[\]()]*)?'
+    # Fixed: domains cannot end with hyphens, and properly handles multiple parentheses
+    url_pattern = r'https?://[^\s<>"{}|\\^`\[\]]+(?:\([^\s<>"{}|\\^`\[\]]*\)[^\s<>"{}|\\^`\[\]]*)*|www\.[^\s<>"{}|\\^`\[\]]+|[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.[a-zA-Z]{2,}(?:/[^\s<>"{}|\\^`\[\]]*)?'
     raw_urls = re.findall(url_pattern, text)
     
     # Clean URLs by removing trailing punctuation
