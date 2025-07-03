@@ -84,6 +84,11 @@ def _make_request(prompt, temperature: float = 0.8, max_retries: int = 3):
                 max_output_tokens=8192,
             )
         )
+        
+        # Ensure we always return a valid string
+        if response.text is None:
+            raise Exception("Gemini API returned None response text")
+        
         return response.text
     
     return _retry_with_backoff(api_call, max_retries)
@@ -125,6 +130,11 @@ def gemini_describe_image(image_url: str, temperature: float = 0.01, max_retries
                     max_output_tokens=2048,
                 )
             )
+            
+            # Ensure we always return a valid string
+            if response.text is None:
+                raise Exception("Gemini API returned None response text for image description")
+            
             return response.text
         
         # Use shared retry logic

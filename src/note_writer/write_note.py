@@ -105,9 +105,18 @@ def research_post_and_write_note(
 
     search_prompt = _get_prompt_for_live_search(post, images_summary)
     search_results = get_gemini_search_response(search_prompt)
+    
+    # Handle case where search results are None
+    if search_results is None:
+        return NoteResult(post=post, error="Failed to get search results from Gemini API")
+    
     note_prompt = _get_prompt_for_note_writing(post, images_summary, search_results)
 
     note_or_refusal_str = get_gemini_response(note_prompt)
+
+    # Handle case where Gemini API returns None due to errors
+    if note_or_refusal_str is None:
+        return NoteResult(post=post, error="Failed to get response from Gemini API")
 
     if ("NO NOTE NEEDED" in note_or_refusal_str) or (
         "NOT ENOUGH EVIDENCE TO WRITE A GOOD COMMUNITY NOTE" in note_or_refusal_str
