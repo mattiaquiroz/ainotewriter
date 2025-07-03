@@ -25,9 +25,15 @@ def _worker(
 
         log_strings: List[str] = []
         if note_result.post is not None:
-            log_strings.append(f"*POST TEXT:*\n  {note_result.post.text}\n")
+            # Show if post is empty or just whitespace
+            text_content = note_result.post.text or "[No text content]"
+            if not note_result.post.text or not note_result.post.text.strip():
+                text_content = "[Empty post]"
+            log_strings.append(f"*POST TEXT:*\n  {text_content}\n")
         if note_result.images_summary is not None:
-            log_strings.append(f"\n*IMAGE SUMMARY:*\n  {note_result.images_summary}")
+            # Show if image summary is empty
+            images_content = note_result.images_summary.strip() if note_result.images_summary else "[No images or failed to analyze]"
+            log_strings.append(f"\n*IMAGE SUMMARY:*\n  {images_content}")
         if note_result.error is not None:
             log_strings.append(f"\n*ERROR:* {note_result.error}")
         if note_result.refusal:

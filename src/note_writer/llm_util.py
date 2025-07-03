@@ -279,12 +279,29 @@ def extract_urls_from_text(text: str) -> List[str]:
     Extract all URLs from text using regex pattern
     """
     # Pattern to match URLs with various protocols and formats
-    url_pattern = r'https?://[^\s<>"{}|\\^`\[\]]+|www\.[^\s<>"{}|\\^`\[\]]+|[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]*\.[a-zA-Z]{2,}(?:/[^\s<>"{}|\\^`\[\]]*)?'
-    urls = re.findall(url_pattern, text)
+    # Excludes common punctuation that might be at the end of URLs in text
+    url_pattern = r'https?://[^\s<>"{}|\\^`\[\]()]+(?:\([^\s<>"{}|\\^`\[\]()]*\))?[^\s<>"{}|\\^`\[\]()]*|www\.[^\s<>"{}|\\^`\[\]()]+|[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]*\.[a-zA-Z]{2,}(?:/[^\s<>"{}|\\^`\[\]()]*)?'
+    raw_urls = re.findall(url_pattern, text)
+    
+    # Clean URLs by removing trailing punctuation
+    cleaned_urls = []
+    for url in raw_urls:
+        # Remove trailing punctuation that's commonly at the end of sentences
+        cleaned_url = re.sub(r'[)\].,;:!?]+$', '', url.strip())
+        if cleaned_url:
+            cleaned_urls.append(cleaned_url)
+    
+    # Remove duplicates while preserving order
+    seen = set()
+    unique_urls = []
+    for url in cleaned_urls:
+        if url not in seen:
+            seen.add(url)
+            unique_urls.append(url)
     
     # Normalize URLs - add https:// if missing
     normalized_urls = []
-    for url in urls:
+    for url in unique_urls:
         if not url.startswith(('http://', 'https://')):
             if url.startswith('www.'):
                 normalized_urls.append(f'https://{url}')

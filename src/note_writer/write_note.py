@@ -36,27 +36,31 @@ def _get_prompt_for_note_writing(post: Post, images_summary: str, search_results
         - The note must:
         - Be written in a clear, neutral, and professional tone (no emojis, hashtags, or preambles like "Community Note:")
         - Include at least one working, trustworthy URL as a source. Do not write "[Source]" — just include the plain URL.
-        - Prefer recent, non-partisan sources that would be found trustworthy across political perspectives.
+        - Use ONLY recent, non-partisan sources that would be found trustworthy across political perspectives.
+        - Ensure all factual claims in your note are current and accurate as of today's date.
         - If the post is not misleading or does not contain concrete, fact-checkable claims, respond with:
         - "NO NOTE NEEDED."
         - If the post may be misleading but the available evidence is outdated, broken (e.g. 404 links), or insufficient to confidently write a correction, respond with:
         - "NOT ENOUGH EVIDENCE TO WRITE A GOOD COMMUNITY NOTE."
 
-        Only write a note if you're highly confident that:
+        CRITICAL: Only write a note if you're highly confident that:
         - The post is misleading,
-        - The correction is well-supported by evidence,
-        - The correction would likely be seen as helpful and trustworthy by readers across political views.
+        - The correction is well-supported by current, verifiable evidence,
+        - The correction would likely be seen as helpful and trustworthy by readers across political views,
+        - All information in your note is up-to-date and contextually accurate.
 
-        Do not write notes about predictions or speculative statements. Ignore outdated or incorrect source content (e.g. referring to past administrations or candidates when context has changed).
+        Do not write notes about predictions or speculative statements. 
+        REJECT any source content that appears outdated or contextually incorrect (e.g. referring to past administrations, outdated positions, expired legislation, or changed circumstances).
+        Verify that names, titles, dates, and context are all current and accurate.
 
         Post text:
         ```
-        {post.text}
+        {post.text or "[No text content]"}
         ```
 
         Summary of images in the post:
         ```
-        {images_summary}
+        {images_summary or "[No images]"}
         ```
 
         Live search results:
@@ -72,21 +76,24 @@ def _get_prompt_for_live_search(post: Post, images_summary: str = ""):
         - Your response MUST include specific, direct URLs/links next to the claims they support
         - Only cite sources from reputable news outlets, government websites, academic institutions, or well-established organizations
         - Ensure all URLs are complete, properly formatted, and likely to be accessible
-        - Prefer recent sources (within the last 2 years unless historical context is needed)
+        - PRIORITIZE recent sources (within the last 1-2 years) unless historical context is specifically needed
+        - Verify the information is still current and relevant to today's context
         - Do NOT include generic domain names or incomplete URLs
         - Do NOT include any formatting like "[Source]" - just provide the plain, complete URL
+        - Do NOT cite outdated information that may no longer be accurate
 
         Focus on finding sources that would be considered trustworthy across different political perspectives.
-        If you cannot find reliable, specific sources for the claims in the post, say so explicitly.
+        If you cannot find reliable, current, specific sources for the claims in the post, say so explicitly.
+        Be especially careful to verify that any dates, names, positions, or context mentioned are still accurate.
 
         Post text:
         ```
-        {post.text}
+        {post.text or "[No text content]"}
         ```
 
         Summary of images in the post:
         ```
-        {images_summary}
+        {images_summary or "[No images]"}
         ```
     """
 
@@ -97,18 +104,31 @@ def _summarize_images(post: Post) -> str:
     images_summary = ""
     for i, media in enumerate(post.media):
         if media.media_type == "photo":
-            image_description = gemini_describe_image(media.url)
-            images_summary += f"Image {i}: {image_description}\n\n"
+            if not media.url:
+                images_summary += f"Image {i}: [No URL available for image]\n\n"
+                continue
+            try:
+                image_description = gemini_describe_image(media.url)
+                if image_description and image_description.strip():
+                    images_summary += f"Image {i}: {image_description.strip()}\n\n"
+                else:
+                    images_summary += f"Image {i}: [Unable to analyze image]\n\n"
+            except Exception as e:
+                images_summary += f"Image {i}: [Error analyzing image: {str(e)[:100]}]\n\n"
         elif media.media_type == "video":
             raise ValueError("Video not supported yet")
         else:
-            raise ValueError(f"Unsupported media type: {media.type}")
+            raise ValueError(f"Unsupported media type: {media.media_type}")
     return images_summary
 
 
 def research_post_and_write_note(
     post: Post,
 ) -> NoteResult:
+    # Check if post has meaningful content (text or media)
+    if (not post.text or not post.text.strip()) and (not post.media or len(post.media) == 0):
+        return NoteResult(post=post, refusal="NO NOTE NEEDED: Post appears to be empty with no text content or media.")
+    
     try:
         images_summary = _summarize_images(post)
     except ValueError as e:
