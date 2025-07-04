@@ -560,11 +560,19 @@ def _search_with_rss_feeds(query: str, max_results: int = 10) -> str:
                     
                     # Check if query terms appear in title or summary
                     if any(term in (title + summary).lower() for term in query_lower.split()):
+                        # Safely extract domain from URL
+                        try:
+                            from urllib.parse import urlparse
+                            parsed_url = urlparse(feed_url)
+                            domain = parsed_url.netloc or feed_url
+                        except Exception:
+                            domain = feed_url
+                        
                         all_entries.append({
                             'title': title,
                             'summary': summary,
                             'link': link,
-                            'source': feed_url.split('/')[2],  # Extract domain
+                            'source': domain,
                             'relevance': _calculate_relevance_score(title + summary, query)
                         })
                         
@@ -636,10 +644,18 @@ def _search_with_news_scraper(query: str, max_results: int = 10) -> str:
                                 from urllib.parse import urljoin
                                 link = urljoin(url, link)
                             
+                            # Safely extract domain from URL
+                            try:
+                                from urllib.parse import urlparse
+                                parsed_url = urlparse(url)
+                                domain = parsed_url.netloc or url
+                            except Exception:
+                                domain = url
+                                
                             all_articles.append({
                                 'title': title,
                                 'url': link,
-                                'source': url.split('/')[2]
+                                'source': domain
                             })
                             
             except Exception as e:
