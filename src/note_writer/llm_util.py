@@ -321,7 +321,13 @@ def search_web_for_recent_info(query: str, max_results: int = 10) -> str:
             is_failure = not results or any(pattern in results for pattern in failure_patterns)
             
             if not is_failure:
-                print(f"✅ {engine_name} successful - found results")
+                # Extract result count from the results string
+                result_count = 0
+                if "Result 1:" in results:
+                    # Count the number of "Result X:" patterns
+                    result_count = len(re.findall(r'Result \d+:', results))
+                
+                print(f"✅ {engine_name} successful - found {result_count} results")
                 # Cache the successful result
                 _search_cache[cache_key] = (current_time, results)
                 return results
@@ -897,6 +903,80 @@ def _calculate_priority_score(title: str, body: str, url: str, original_query: s
     return score
 
 
+def _create_enhanced_search_query(post_text: str) -> str:
+    """
+    Create an enhanced search query from post text that is more comprehensive
+    but not overly complex. This improves search results by including more context.
+    """
+    import re
+    
+    # Clean the post text
+    text = post_text.strip()[:300]  # Limit to avoid overly long queries
+    
+    # Remove problematic characters and formatting
+    text = re.sub(r'[^\w\s@#.,!?-]', ' ', text)  # Keep alphanumeric, spaces, and basic punctuation
+    text = re.sub(r'\s+', ' ', text)  # Normalize whitespace
+    
+    # Extract key components
+    # Find usernames/handles (like @ladygaga)
+    usernames = re.findall(r'@\w+', text)
+    
+    # Find hashtags
+    hashtags = re.findall(r'#\w+', text)
+    
+    # Find quoted text or song titles (text in quotes)
+    quoted_text = re.findall(r'"([^"]+)"', text)
+    
+    # Find capitalized words (likely proper nouns, names, places)
+    capitalized_words = re.findall(r'\b[A-Z][a-z]+\b', text)
+    
+    # Find numbers that might be important (chart positions, statistics, etc.)
+    numbers = re.findall(r'\b\d+\b', text)
+    
+    # Build the enhanced query
+    query_parts = []
+    
+    # Start with the core text (first 50 words to keep manageable)
+    core_text = ' '.join(text.split()[:50])
+    query_parts.append(core_text)
+    
+    # Add specific elements for more targeted search
+    if usernames:
+        # Add main username without @ for better search results
+        main_username = usernames[0][1:]  # Remove @ symbol
+        query_parts.append(f'"{main_username}"')
+    
+    if quoted_text:
+        # Add the quoted text (likely song titles, etc.)
+        for quote in quoted_text[:2]:  # Limit to first 2 quotes
+            query_parts.append(f'"{quote}"')
+    
+    if capitalized_words:
+        # Add significant capitalized words (likely names, places, etc.)
+        important_caps = [word for word in capitalized_words if len(word) > 2][:3]
+        for word in important_caps:
+            query_parts.append(f'"{word}"')
+    
+    # Add context terms for better search results
+    if any(word in text.lower() for word in ['song', 'track', 'album', 'music', 'stream']):
+        query_parts.append('music charts streaming')
+    
+    if any(word in text.lower() for word in ['outstream', 'streams', 'streaming']):
+        query_parts.append('streaming statistics')
+    
+    # Add recency indicators
+    query_parts.append('2024 2025 recent')
+    
+    # Join all parts with spaces (not OR, to keep it simple)
+    enhanced_query = ' '.join(query_parts)
+    
+    # Final cleanup and length limit
+    enhanced_query = re.sub(r'\s+', ' ', enhanced_query)
+    enhanced_query = enhanced_query[:250]  # Keep under 250 chars
+    
+    return enhanced_query.strip()
+
+
 def get_gemini_search_response(prompt: str, temperature: float = 0.8):
     """
     Get a response from Gemini with enhanced search capabilities.
@@ -918,8 +998,12 @@ def get_gemini_search_response(prompt: str, temperature: float = 0.8):
     # Always perform web search for current information
     web_results = ""
     if post_text.strip():
-        # Perform web search for recent information
-        web_results = search_web_for_recent_info(post_text[:200])  # Limit query length
+        # Create an enhanced search query that's more comprehensive
+        enhanced_query = _create_enhanced_search_query(post_text)
+        print(f"🔍 Enhanced search query: {enhanced_query}")
+        
+        # Perform web search for recent information using the enhanced query
+        web_results = search_web_for_recent_info(enhanced_query)
         
         if "Web search error" in web_results or "unavailable" in web_results:
             print(f"Web search failed: {web_results}")
