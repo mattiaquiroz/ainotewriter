@@ -2,7 +2,8 @@ import os
 import time
 import re
 import requests
-from typing import List, Dict, Optional, Tuple
+import random
+from typing import List, Dict, Optional, Tuple, Any
 from urllib.parse import urlparse, urljoin
 
 import dotenv
@@ -15,6 +16,10 @@ client = genai.Client()
 # Rate limiting: Gemini free tier allows 15 requests per minute
 _last_request_time = 0
 _min_request_interval = 7  # 7 seconds between requests (8 requests per minute to be safe)
+
+# Simple cache for search results to avoid duplicate API calls
+_search_cache = {}
+_cache_expiry_seconds = 300  # 5 minutes
 
 def _rate_limit():
     """Ensure we don't exceed the Gemini API rate limit"""
@@ -266,79 +271,120 @@ def gemini_describe_image(image_url: str, temperature: float = 0.01, max_retries
 
 def search_web_for_recent_info(query: str, max_results: int = 10) -> str:
     """
-    Search the web for recent information using DuckDuckGo search
+    Search the web for recent information using DuckDuckGo search with rate limit handling
     Returns formatted search results or error message
     """
     try:
         from duckduckgo_search import DDGS
         
-        # Multiple search strategies for comprehensive coverage
-        search_queries = [
-            f"{query} 2024 OR 2025",  # Recent events
-            f"{query} site:gov OR site:edu OR site:org",  # Official sources
-            f"{query} news 2024 2025",  # News coverage
-            f'"{query}" latest current',  # Exact phrase + recency
-        ]
+        # Check cache first to avoid duplicate API calls
+        cache_key = f"{query.strip()[:100]}_{max_results}"  # Limit key length
+        current_time = time.time()
+        
+        # Clean expired cache entries
+        expired_keys = [k for k, (timestamp, _) in _search_cache.items() 
+                       if current_time - timestamp > _cache_expiry_seconds]
+        for k in expired_keys:
+            del _search_cache[k]
+        
+        # Return cached result if available and not expired
+        if cache_key in _search_cache:
+            timestamp, cached_result = _search_cache[cache_key]
+            if current_time - timestamp <= _cache_expiry_seconds:
+                print(f"📋 Using cached search results for: {query[:50]}...")
+                return cached_result
+        
+        # Create a single comprehensive search query instead of multiple separate searches
+        # This reduces API calls from 4 to 1, dramatically reducing rate limit issues
+        enhanced_query = _build_comprehensive_search_query(query)
+        
+        print(f"🔍 Searching for: {enhanced_query}")
         
         all_results = []
         seen_urls = set()
-        max_total_results = max_results * 2  # Get extra for filtering
+        max_attempts = 3
+        base_delay = 2.0  # Start with 2 second delay
         
-        for search_query in search_queries:
+        for attempt in range(max_attempts):
             try:
+                # Add delay between attempts to respect rate limits
+                if attempt > 0:
+                    delay = base_delay * (2 ** (attempt - 1)) + random.uniform(0, 1)
+                    print(f"⏰ Rate limit detected, waiting {delay:.1f}s before retry {attempt + 1}/{max_attempts}")
+                    time.sleep(delay)
+                
+                # Use a single DDGS instance for the search
                 with DDGS() as ddgs:
-                    results = list(ddgs.text(search_query, max_results=max_results, safesearch='moderate'))
+                    # Get more results initially for better filtering
+                    search_results = list(ddgs.text(
+                        enhanced_query, 
+                        max_results=max_results * 3,  # Get extra for filtering
+                        safesearch='moderate',
+                        region='wt-wt',  # Worldwide results
+                        timelimit='m'    # Recent results (last month)
+                    ))
                     
-                    for result in results:
+                    print(f"✅ Retrieved {len(search_results)} raw results")
+                    
+                    for result in search_results:
                         title = result.get('title', 'No title')
                         body = result.get('body', 'No description')
                         url = result.get('href', 'No URL')
                         
-                        # Skip duplicates and unreliable social media
-                        if url in seen_urls:
-                            continue
-                        if any(domain in url.lower() for domain in ['twitter.com', 'x.com', 'facebook.com', 'instagram.com', 'tiktok.com']):
+                        # Skip duplicates and low-quality sources
+                        if url in seen_urls or _should_skip_url(url):
                             continue
                             
                         seen_urls.add(url)
                         
-                        # Prioritize official sources and recent news
-                        priority_score = 0
-                        if any(domain in url.lower() for domain in ['.gov', '.edu', '.org']):
-                            priority_score += 10
-                        if any(domain in url.lower() for domain in ['reuters.com', 'ap.org', 'cnn.com', 'nytimes.com', 'washingtonpost.com', 'bbc.com']):
-                            priority_score += 8
-                        if any(word in title.lower() for word in ['2024', '2025', 'latest', 'breaking', 'just', 'new']):
-                            priority_score += 5
-                        if any(word in body.lower() for word in ['2024', '2025', 'recent', 'latest', 'today', 'yesterday']):
-                            priority_score += 3
-                            
+                        # Calculate relevance and recency score
+                        priority_score = _calculate_priority_score(title, body, url, query)
+                        
                         all_results.append({
                             'title': title,
                             'body': body,
                             'url': url,
-                            'query': search_query,
                             'priority': priority_score
                         })
                         
-                        if len(all_results) >= max_total_results:
+                        # Stop once we have enough quality results
+                        if len(all_results) >= max_results * 2:
                             break
+                
+                # If we got results, break out of retry loop
+                if all_results:
+                    break
                     
-                    # Check if we have enough results to exit outer loop
-                    if len(all_results) >= max_total_results:
-                        break
-                            
             except Exception as e:
-                print(f"Search query '{search_query}' failed: {str(e)}")
-                continue
+                error_str = str(e).lower()
+                
+                # Check if this is a rate limit error
+                if any(indicator in error_str for indicator in ['ratelimit', '202', 'rate limit', 'too many requests']):
+                    print(f"⚠️ Rate limit detected: {str(e)}")
+                    if attempt < max_attempts - 1:
+                        continue  # Retry with backoff
+                    else:
+                        return f"Rate limit exceeded after {max_attempts} attempts. Please try again later."
+                else:
+                    print(f"❌ Search failed: {str(e)}")
+                    if attempt < max_attempts - 1:
+                        continue  # Retry for other errors too
+                    else:
+                        return f"Web search error after {max_attempts} attempts: {str(e)}"
         
         if not all_results:
-            return f"No recent web search results found for: {query}"
+            no_results_msg = f"No recent web search results found for: {query}"
+            # Cache the no-results response too
+            _search_cache[cache_key] = (current_time, no_results_msg)
+            return no_results_msg
         
-        # Sort by priority score, then take top results
+        # Sort by priority score and take top results
         all_results.sort(key=lambda x: x['priority'], reverse=True)
         top_results = all_results[:max_results]
         
+        print(f"📊 Returning top {len(top_results)} results (from {len(all_results)} total)")
+        
+        # Format results for output
         formatted_results = []
         for i, result in enumerate(top_results):
             formatted_results.append(
@@ -346,15 +392,105 @@ def search_web_for_recent_info(query: str, max_results: int = 10) -> str:
                 f"Title: {result['title']}\n"
                 f"Description: {result['body']}\n"
                 f"URL: {result['url']}\n"
-                f"Search Query: {result['query']}\n"
             )
         
-        return f"ENHANCED WEB SEARCH RESULTS for '{query}' (sorted by relevance and recency):\n\n" + "\n".join(formatted_results)
+        final_result = f"RECENT WEB SEARCH RESULTS for '{query}' (sorted by relevance and recency):\n\n" + "\n".join(formatted_results)
+        
+        # Cache the successful result
+        _search_cache[cache_key] = (current_time, final_result)
+        
+        return final_result
         
     except ImportError:
         return "Web search unavailable (duckduckgo-search package not installed)"
     except Exception as e:
         return f"Web search error: {str(e)}"
+
+
+def _build_comprehensive_search_query(original_query: str) -> str:
+    """
+    Build a single comprehensive search query instead of multiple separate queries
+    This reduces API calls and improves efficiency
+    """
+    # Clean and limit the query length
+    query = original_query.strip()[:150]  # Limit to avoid overly long queries
+    
+    # Remove problematic characters that might cause search issues
+    query = query.replace('```', '').replace('"', '').strip()
+    
+    # Build a comprehensive query that covers what the multiple queries were trying to achieve
+    # Instead of 4 separate API calls, use search operators in a single call
+    if any(year in query for year in ['2024', '2025']):
+        # Already has recent year indicators
+        enhanced_query = f'"{query}" OR ({query} news) OR ({query} official)'
+    else:
+        # Add recency indicators
+        enhanced_query = f'"{query}" OR ({query} 2024) OR ({query} 2025) OR ({query} news recent)'
+    
+    return enhanced_query
+
+
+def _should_skip_url(url: str) -> bool:
+    """
+    Determine if a URL should be skipped based on domain/quality
+    """
+    url_lower = url.lower()
+    
+    # Skip social media and low-quality sources
+    skip_domains = [
+        'twitter.com', 'x.com', 'facebook.com', 'instagram.com', 'tiktok.com',
+        'pinterest.com', 'reddit.com', 'youtube.com', 'youtu.be',
+        'blogspot.com', 'wordpress.com', 'medium.com/@'  # Skip personal blogs
+    ]
+    
+    return any(domain in url_lower for domain in skip_domains)
+
+
+def _calculate_priority_score(title: str, body: str, url: str, original_query: str) -> int:
+    """
+    Calculate a priority score for search results based on multiple factors
+    """
+    score = 0
+    title_lower = title.lower()
+    body_lower = body.lower()
+    url_lower = url.lower()
+    query_lower = original_query.lower()
+    
+    # Official and credible sources get high priority
+    if any(domain in url_lower for domain in ['.gov', '.edu', '.org']):
+        score += 15
+    
+    # Major news sources get high priority
+    news_domains = [
+        'reuters.com', 'ap.org', 'cnn.com', 'nytimes.com', 'washingtonpost.com', 
+        'bbc.com', 'npr.org', 'wsj.com', 'guardian.com', 'bloomberg.com'
+    ]
+    if any(domain in url_lower for domain in news_domains):
+        score += 12
+    
+    # Other news sources get medium priority
+    news_indicators = ['news', 'press', 'times', 'post', 'journal', 'herald']
+    if any(indicator in url_lower for indicator in news_indicators):
+        score += 8
+    
+    # Recency indicators in title
+    recent_words = ['2024', '2025', 'latest', 'breaking', 'just', 'new', 'recent', 'today']
+    score += sum(3 for word in recent_words if word in title_lower)
+    
+    # Recency indicators in description
+    score += sum(2 for word in recent_words if word in body_lower)
+    
+    # Query relevance - exact phrase matches
+    if query_lower[:50] in title_lower:  # Limit query length for comparison
+        score += 10
+    if query_lower[:50] in body_lower:
+        score += 5
+    
+    # Quality indicators
+    quality_words = ['official', 'announcement', 'confirmed', 'verified', 'statement']
+    score += sum(2 for word in quality_words if word in title_lower or word in body_lower)
+    
+    return score
 
 
 def get_gemini_search_response(prompt: str, temperature: float = 0.8):
