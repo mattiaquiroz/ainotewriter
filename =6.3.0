@@ -1,0 +1,17 @@
+Defaulting to user installation because normal site-packages is not writeable
+Collecting duckduckgo-search
+  Downloading duckduckgo_search-8.0.5-py3-none-any.whl.metadata (16 kB)
+Collecting click>=8.1.8 (from duckduckgo-search)
+  Downloading click-8.2.1-py3-none-any.whl.metadata (2.5 kB)
+Collecting primp>=0.15.0 (from duckduckgo-search)
+  Downloading primp-0.15.0-cp38-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (13 kB)
+Collecting lxml>=5.3.0 (from duckduckgo-search)
+  Downloading lxml-6.0.0-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl.metadata (6.6 kB)
+Downloading duckduckgo_search-8.0.5-py3-none-any.whl (18 kB)
+Downloading click-8.2.1-py3-none-any.whl (102 kB)
+Downloading lxml-6.0.0-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl (5.2 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 5.2/5.2 MB 118.5 MB/s eta 0:00:00
+Downloading primp-0.15.0-cp38-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (3.3 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 3.3/3.3 MB 106.3 MB/s eta 0:00:00
+Installing collected packages: primp, lxml, click, duckduckgo-search
+Successfully installed click-8.2.1 duckduckgo-search-8.0.5 lxml-6.0.0 primp-0.15.0

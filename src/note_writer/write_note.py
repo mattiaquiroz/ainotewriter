@@ -30,6 +30,8 @@ def _get_prompt_for_note_writing(post: Post, images_summary: str, search_results
     return f"""You will be given a post on X (formerly Twitter), a summary of any images, and live search results. 
         Your task is to determine whether the post is misleading and if it merits a Community Note.
 
+        CURRENT DATE CONTEXT: Today is 2025. Pay special attention to claims about recent events from late 2024 through 2025.
+
         Instructions:
 
         - If the post is misleading and there is strong, up-to-date, verifiable evidence to support a correction, write a concise Community Note (280 characters max, not counting URLs).
@@ -38,7 +40,7 @@ def _get_prompt_for_note_writing(post: Post, images_summary: str, search_results
         - Include at least one working, trustworthy URL as a source. Do not write "[Source]" — just include the plain URL.
         - Use ONLY recent, non-partisan sources that would be found trustworthy across political perspectives.
         - CRITICAL: Only cite URLs that are marked as "VERIFIED VALID SOURCES" in the search results. Do not use any broken, 404, or invalid sources.
-        - Ensure all factual claims in your note are current and accurate as of today's date.
+        - Ensure all factual claims in your note are current and accurate as of today's date (2025).
         - If the post is not misleading or does not contain concrete, fact-checkable claims, respond with:
         - "NO NOTE NEEDED."
         - If the post may be misleading but the available evidence is outdated, broken (e.g. 404 links), or insufficient to confidently write a correction, respond with:
@@ -48,11 +50,19 @@ def _get_prompt_for_note_writing(post: Post, images_summary: str, search_results
         - The post is misleading,
         - The correction is well-supported by current, verifiable evidence,
         - The correction would likely be seen as helpful and trustworthy by readers across political views,
-        - All information in your note is up-to-date and contextually accurate.
+        - All information in your note is up-to-date and contextually accurate for 2025.
+
+        SPECIAL WARNINGS FOR RECENT EVENTS (2024-2025):
+        - Be extremely cautious about claims involving recent legislation, bills, or political events
+        - If your knowledge seems outdated about a claimed recent event, acknowledge this uncertainty
+        - For recent political events: prioritize the most current sources available in the search results
+        - If the search results contain conflicting information about recent events, lean toward "NOT ENOUGH EVIDENCE"
+        - Be humble about the limitations of your training data for very recent events
 
         Do not write notes about predictions or speculative statements. 
         REJECT any source content that appears outdated or contextually incorrect (e.g. referring to past administrations, outdated positions, expired legislation, or changed circumstances).
         REJECT any source that returned 404, 403, or other errors - do not use information from broken or inaccessible sources.
+        REJECT any eliminated/deleted Twitter/X posts as sources.
         Verify that names, titles, dates, and context are all current and accurate.
 
         Post text:
@@ -74,15 +84,25 @@ def _get_prompt_for_note_writing(post: Post, images_summary: str, search_results
 def _get_prompt_for_live_search(post: Post, images_summary: str = ""):
     return f"""Below is a post on X. Conduct research to determine if the post is potentially misleading.
         
+        CURRENT DATE CONTEXT: Today is 2025. Be especially thorough when fact-checking recent events from late 2024 through 2025, as this information may be very recent.
+        
         CRITICAL REQUIREMENTS for sources:
         - Your response MUST include specific, direct URLs/links next to the claims they support
         - Only cite sources from reputable news outlets, government websites, academic institutions, or well-established organizations
         - Ensure all URLs are complete, properly formatted, and likely to be accessible
-        - PRIORITIZE recent sources (within the last 1-2 years) unless historical context is specifically needed
-        - Verify the information is still current and relevant to today's context
+        - For events from 2024-2025: PRIORITIZE the most recent sources available (within days/weeks if possible)
+        - For recent political events, bills, legislation: Search for the most current information from official government sources
+        - Verify the information is still current and relevant to today's context (2025)
         - Do NOT include generic domain names or incomplete URLs
         - Do NOT include any formatting like "[Source]" - just provide the plain, complete URL
         - Do NOT cite outdated information that may no longer be accurate
+        - AVOID Twitter/X links as primary sources - prefer mainstream news or official sources
+
+        SPECIAL ATTENTION FOR RECENT EVENTS:
+        - If the post mentions specific bills, legislation, or political events from 2024-2025, search extensively for the most current information
+        - Check multiple recent news sources to verify if claimed events actually occurred
+        - Look for official government announcements, press releases, or congressional records
+        - Be aware that your knowledge may be outdated for very recent events
 
         Focus on finding sources that would be considered trustworthy across different political perspectives.
         If you cannot find reliable, current, specific sources for the claims in the post, say so explicitly.
