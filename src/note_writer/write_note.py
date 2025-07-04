@@ -37,6 +37,7 @@ def _get_prompt_for_note_writing(post: Post, images_summary: str, search_results
         - Be written in a clear, neutral, and professional tone (no emojis, hashtags, or preambles like "Community Note:")
         - Include at least one working, trustworthy URL as a source. Do not write "[Source]" — just include the plain URL.
         - Use ONLY recent, non-partisan sources that would be found trustworthy across political perspectives.
+        - CRITICAL: Only cite URLs that are marked as "VERIFIED VALID SOURCES" in the search results. Do not use any broken, 404, or invalid sources.
         - Ensure all factual claims in your note are current and accurate as of today's date.
         - If the post is not misleading or does not contain concrete, fact-checkable claims, respond with:
         - "NO NOTE NEEDED."
@@ -51,6 +52,7 @@ def _get_prompt_for_note_writing(post: Post, images_summary: str, search_results
 
         Do not write notes about predictions or speculative statements. 
         REJECT any source content that appears outdated or contextually incorrect (e.g. referring to past administrations, outdated positions, expired legislation, or changed circumstances).
+        REJECT any source that returned 404, 403, or other errors - do not use information from broken or inaccessible sources.
         Verify that names, titles, dates, and context are all current and accurate.
 
         Post text:

@@ -425,11 +425,12 @@ def verify_and_filter_links(search_results: str, original_query: str) -> Tuple[O
         content, status_code, error_msg = fetch_page_content(url)
         
         if content is None:
+            # If we can't fetch the content (404, 403, timeout, etc.), mark as invalid immediately
             print(f"    ❌ Failed to fetch: {error_msg}")
             url_validation_results[url] = (False, f"Failed to fetch: {error_msg}")
             continue
         
-        # Validate content with Gemini
+        # Only validate with Gemini if we successfully fetched content
         is_valid, explanation = validate_page_content_with_gemini(url, content, original_query)
         
         if is_valid:
@@ -449,12 +450,16 @@ def verify_and_filter_links(search_results: str, original_query: str) -> Tuple[O
     
     print(f"✅ Found {len(valid_urls)} valid sources - proceeding with note generation")
     
-    # Remove invalid URLs from the search results text
-    filtered_results = search_results
-    for url in urls:
-        if url not in valid_urls:
-            # Remove the invalid URL and surrounding context
-            filtered_results = filtered_results.replace(url, "[REMOVED: Invalid/Irrelevant Source]")
+    # Create a filtered version that emphasizes only valid sources
+    filtered_results = f"""VERIFIED VALID SOURCES (ONLY USE THESE):
+{chr(10).join(f"✅ {url}" for url in valid_urls)}
+
+ORIGINAL SEARCH RESULTS:
+{search_results}
+
+IMPORTANT: Only use information that can be attributed to the VERIFIED VALID SOURCES listed above. 
+Do not use any information from sources marked as invalid, broken, or 404.
+If you reference information in your note, only cite URLs from the VERIFIED VALID SOURCES list."""
     
     return filtered_results, valid_urls
 
