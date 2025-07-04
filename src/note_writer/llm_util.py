@@ -264,14 +264,79 @@ def gemini_describe_image(image_url: str, temperature: float = 0.01, max_retries
         raise Exception(f"Error describing image with Gemini: {str(e)}")
 
 
+def search_web_for_recent_info(query: str, max_results: int = 5) -> str:
+    """
+    Search the web for recent information using DuckDuckGo search
+    Returns formatted search results or error message
+    """
+    try:
+        from duckduckgo_search import DDGS
+        
+        # Create search query with time constraints for recent events
+        recent_query = f"{query} 2024 OR 2025"
+        
+        search_results = []
+        with DDGS() as ddgs:
+            results = list(ddgs.text(recent_query, max_results=max_results, safesearch='moderate'))
+            
+            for i, result in enumerate(results[:max_results]):
+                title = result.get('title', 'No title')
+                body = result.get('body', 'No description')
+                url = result.get('href', 'No URL')
+                
+                # Filter out social media results that might be unreliable
+                if any(domain in url.lower() for domain in ['twitter.com', 'x.com', 'facebook.com', 'instagram.com', 'tiktok.com']):
+                    continue
+                    
+                search_results.append(f"Result {i+1}:\nTitle: {title}\nDescription: {body}\nURL: {url}\n")
+        
+        if not search_results:
+            return f"No recent web search results found for: {query}"
+        
+        return f"WEB SEARCH RESULTS for '{query}':\n\n" + "\n".join(search_results)
+        
+    except ImportError:
+        return "Web search unavailable (duckduckgo-search package not installed)"
+    except Exception as e:
+        return f"Web search error: {str(e)}"
+
+
 def get_gemini_search_response(prompt: str, temperature: float = 0.8):
     """
-    Get a response from Gemini with search capabilities.
-    Note: Gemini doesn't have built-in web search like Grok, so we'll use 
-    the regular text model and instruct it to provide factual information.
+    Get a response from Gemini with enhanced search capabilities.
+    For recent events, we'll supplement with web search when possible.
     """
     
-    return _make_request(prompt, temperature)
+    # First, try to get the basic response from Gemini
+    gemini_response = _make_request(prompt, temperature)
+    
+    # Check if the prompt involves recent events that might need web search
+    recent_keywords = ['2024', '2025', 'recent', 'latest', 'just passed', 'new bill', 'just signed', 'breaking']
+    
+    if any(keyword in prompt.lower() for keyword in recent_keywords):
+        # Extract key terms for web search
+        # Look for specific claims that might be recent
+        lines = prompt.split('\n')
+        post_text = ""
+        for line in lines:
+            if 'Post text:' in line:
+                # Find the post text section
+                start_idx = lines.index(line)
+                for i in range(start_idx + 1, min(start_idx + 10, len(lines))):
+                    if lines[i].strip() and not lines[i].startswith('```'):
+                        post_text += lines[i] + " "
+                break
+        
+        if post_text.strip():
+            # Perform web search for recent information
+            web_results = search_web_for_recent_info(post_text[:200])  # Limit query length
+            
+            if "Web search error" not in web_results and "unavailable" not in web_results:
+                # Combine Gemini response with web search results
+                enhanced_response = f"{gemini_response}\n\n--- SUPPLEMENTAL WEB SEARCH FOR RECENT EVENTS ---\n{web_results}"
+                return enhanced_response
+    
+    return gemini_response
 
 
 def extract_urls_from_text(text: str) -> List[str]:
@@ -351,6 +416,34 @@ def validate_page_content_with_gemini(url: str, content: str, original_claim: st
     Use Gemini to validate if page content is relevant and not a 404/error page
     Returns (is_valid, explanation)
     """
+    
+    # Check if this is a Twitter/X URL that might be deleted/eliminated
+    parsed_url = urlparse(url.lower())
+    is_twitter_url = parsed_url.netloc in ['twitter.com', 'x.com', 'www.twitter.com', 'www.x.com', 'mobile.twitter.com', 'm.twitter.com']
+    
+    # Check for common indicators of deleted/eliminated Twitter posts
+    if is_twitter_url:
+        deleted_indicators = [
+            "this post is from a suspended account",
+            "this post has been deleted",
+            "this tweet is unavailable", 
+            "this account owner limits who can view",
+            "tweet not found",
+            "post not found",
+            "account suspended",
+            "page doesn't exist",
+            "something went wrong",
+            "try again",
+            "hmm...this page doesn't exist",
+            "sorry, you are not authorized to see this status",
+            "this tweet was deleted"
+        ]
+        
+        content_lower = content.lower()
+        for indicator in deleted_indicators:
+            if indicator in content_lower:
+                return False, f"Eliminated/deleted Twitter/X post: {indicator}"
+    
     prompt = f"""You are validating whether a web page is useful as a source for fact-checking.
 
 Original claim/context: {original_claim[:500]}...
@@ -360,10 +453,12 @@ URL: {url}
 Page content (first part):
 {content[:3000]}...
 
+IMPORTANT: Pay special attention to the current date context. Today is 2025, so be very careful about claims involving recent events from late 2024 through 2025.
+
 Please analyze this page and respond with exactly one of these formats:
 
 VALID: [brief explanation of why this page is a good source]
-INVALID: [brief explanation of why this page is not useful - e.g., 404 error, irrelevant content, broken page, etc.]
+INVALID: [brief explanation of why this page is not useful - e.g., 404 error, irrelevant content, broken page, deleted social media post, etc.]
 
 The page should be considered INVALID if:
 - It's a 404 or error page
@@ -371,11 +466,15 @@ The page should be considered INVALID if:
 - It's a generic homepage without specific information
 - It contains mostly ads or navigation without substantive content
 - It's broken or corrupted content
+- It's a deleted/eliminated social media post (Twitter/X)
+- For Twitter/X URLs: shows "Tweet not found", "Account suspended", "This tweet was deleted", or similar messages
+- The information is clearly outdated and contradicts more recent events (especially for 2024-2025 events)
 
 The page should be considered VALID if:
 - It contains relevant factual information related to the claim
 - It's from a recognizable news source, government site, or credible organization
 - It has substantive content that could be used for fact-checking
+- For recent events (2024-2025): the source has current, up-to-date information
 """
 
     try:
