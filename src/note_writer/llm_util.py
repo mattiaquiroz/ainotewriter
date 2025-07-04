@@ -307,7 +307,20 @@ def search_web_for_recent_info(query: str, max_results: int = 10) -> str:
             print(f"🔍 Trying {engine_name}...")
             results = search_func(query, max_results)
             
-            if results and "No recent web search results found" not in results and "Web search error" not in results:
+            # Check if the result is a failure message from any search engine
+            failure_patterns = [
+                "No recent web search results found",  # DuckDuckGo
+                "Web search error",  # General error
+                "Google search rate limited or no results found",  # Google
+                "No valid results found from Google search",  # Google
+                "No relevant news found in RSS feeds",  # RSS
+                "No articles found through web scraping",  # News Scraper
+                "No results found with alternative DuckDuckGo",  # Alternative DDG
+            ]
+            
+            is_failure = not results or any(pattern in results for pattern in failure_patterns)
+            
+            if not is_failure:
                 print(f"✅ {engine_name} successful - found results")
                 # Cache the successful result
                 _search_cache[cache_key] = (current_time, results)
