@@ -282,6 +282,7 @@ def search_web_for_recent_info(query: str, max_results: int = 10) -> str:
         
         all_results = []
         seen_urls = set()
+        max_total_results = max_results * 2  # Get extra for filtering
         
         for search_query in search_queries:
             try:
@@ -320,8 +321,12 @@ def search_web_for_recent_info(query: str, max_results: int = 10) -> str:
                             'priority': priority_score
                         })
                         
-                        if len(all_results) >= max_results * 2:  # Get extra for filtering
+                        if len(all_results) >= max_total_results:
                             break
+                    
+                    # Check if we have enough results to exit outer loop
+                    if len(all_results) >= max_total_results:
+                        break
                             
             except Exception as e:
                 print(f"Search query '{search_query}' failed: {str(e)}")
