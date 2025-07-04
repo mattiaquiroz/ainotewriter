@@ -321,7 +321,12 @@ def search_web_for_recent_info(query: str, max_results: int = 10) -> str:
             is_failure = not results or any(pattern in results for pattern in failure_patterns)
             
             if not is_failure:
-                print(f"✅ {engine_name} successful - found results")
+                # Extract result count from the results string for display
+                result_count = _extract_result_count(results)
+                if result_count > 0:
+                    print(f"✅ {engine_name} successful - found {result_count} results")
+                else:
+                    print(f"✅ {engine_name} successful - found results")
                 # Cache the successful result
                 _search_cache[cache_key] = (current_time, results)
                 return results
@@ -774,25 +779,59 @@ def _calculate_relevance_score(text: str, query: str) -> int:
     return score
 
 
+def _extract_result_count(search_results: str) -> int:
+    """
+    Extract the number of results from search result strings
+    """
+    if not search_results:
+        return 0
+    
+    # Count "Result N:" patterns to determine how many results were found
+    import re
+    result_patterns = re.findall(r'Result \d+:', search_results)
+    return len(result_patterns)
+
+
 def _build_comprehensive_search_query(original_query: str) -> str:
     """
     Build a single comprehensive search query instead of multiple separate queries
     This reduces API calls and improves efficiency
     """
     # Clean and limit the query length
-    query = original_query.strip()[:150]  # Limit to avoid overly long queries
+    query = original_query.strip()[:300]  # Increased from 150 to 300
     
     # Remove problematic characters that might cause search issues
     query = query.replace('```', '').replace('"', '').strip()
     
-    # Build a comprehensive query that covers what the multiple queries were trying to achieve
-    # Instead of 4 separate API calls, use search operators in a single call
-    if any(year in query for year in ['2024', '2025']):
-        # Already has recent year indicators
-        enhanced_query = f'"{query}" OR ({query} news) OR ({query} official)'
-    else:
-        # Add recency indicators
-        enhanced_query = f'"{query}" OR ({query} 2024) OR ({query} 2025) OR ({query} news recent)'
+    # Extract key entities and terms for enhanced search
+    import re
+    
+    # Look for potential names, organizations, or important terms
+    capitalized_terms = re.findall(r'\b[A-Z][a-zA-Z]{2,}(?:\s+[A-Z][a-zA-Z]{2,})*\b', query)
+    years = re.findall(r'\b(20\d{2}|2025)\b', query)
+    numbers = re.findall(r'\b\d+(?:,\d{3})*(?:\.\d+)?\b', query)
+    
+    # Build enhanced query with search operators
+    query_parts = [query]  # Start with the main query
+    
+    # Add year context if not already present
+    if not any(year in query for year in ['2024', '2025']):
+        query_parts.append('2024 OR 2025')
+    
+    # Add news/recent context
+    if not any(word in query.lower() for word in ['news', 'recent', 'latest', 'breaking']):
+        query_parts.append('news OR recent OR latest')
+    
+    # Add official source context for important terms
+    if any(word in query.lower() for word in ['bill', 'law', 'legislation', 'vote', 'election', 'campaign']):
+        query_parts.append('official OR announcement OR statement')
+    
+    # Combine all parts with OR operators for comprehensive coverage
+    enhanced_query = f"({') OR ('.join(query_parts)})"
+    
+    # Ensure reasonable length
+    if len(enhanced_query) > 400:
+        enhanced_query = enhanced_query[:400]
     
     return enhanced_query
 
@@ -881,8 +920,11 @@ def get_gemini_search_response(prompt: str, temperature: float = 0.8):
     # Always perform web search for current information
     web_results = ""
     if post_text.strip():
+        # Build a comprehensive search query from the post text
+        search_query = _build_enhanced_search_query(post_text)
+        
         # Perform web search for recent information
-        web_results = search_web_for_recent_info(post_text[:200])  # Limit query length
+        web_results = search_web_for_recent_info(search_query)
         
         if "Web search error" in web_results or "unavailable" in web_results:
             print(f"Web search failed: {web_results}")
@@ -902,6 +944,77 @@ CRITICAL INSTRUCTION: When fact-checking, prioritize information from the WEB SE
     gemini_response = _make_request(enhanced_prompt, temperature)
     
     return gemini_response
+
+
+def _build_enhanced_search_query(post_text: str) -> str:
+    """
+    Build an enhanced search query by extracting key terms, entities, and context from the post text
+    """
+    import re
+    
+    # Clean the text
+    text = post_text.strip()
+    
+    # Remove URLs, mentions, hashtags for cleaner processing
+    text = re.sub(r'https?://\S+', '', text)
+    text = re.sub(r'@\w+', '', text)
+    text = re.sub(r'#\w+', '', text)
+    text = re.sub(r'[^\w\s\'".,!?-]', ' ', text)
+    text = ' '.join(text.split())  # Normalize whitespace
+    
+    # Extract potential key entities and terms
+    key_terms = []
+    
+    # Look for quoted text (direct claims)
+    quotes = re.findall(r'"([^"]+)"', text)
+    for quote in quotes:
+        if len(quote.split()) >= 2:  # Only meaningful quotes
+            key_terms.append(f'"{quote}"')
+    
+    # Look for names (capitalized words)
+    names = re.findall(r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b', text)
+    for name in names[:3]:  # Limit to first 3 names
+        if len(name.split()) <= 3:  # Avoid overly long phrases
+            key_terms.append(name)
+    
+    # Look for years and dates
+    years = re.findall(r'\b(20\d{2}|2025)\b', text)
+    for year in set(years[:2]):  # Unique years, max 2
+        key_terms.append(year)
+    
+    # Look for numbers that might be significant
+    numbers = re.findall(r'\b\d+(?:,\d{3})*(?:\.\d+)?(?:\s*(?:million|billion|thousand|percent|%))?\b', text)
+    for number in numbers[:2]:  # Limit to first 2 significant numbers
+        key_terms.append(number)
+    
+    # Look for important keywords related to recent events
+    important_keywords = [
+        'bill', 'law', 'legislation', 'passed', 'signed', 'voted', 'election', 'campaign',
+        'announced', 'resigned', 'appointed', 'confirmed', 'rejected', 'approved',
+        'statement', 'declared', 'released', 'report', 'study', 'investigation',
+        'breaking', 'news', 'update', 'latest', 'recent', 'today', 'yesterday'
+    ]
+    
+    text_lower = text.lower()
+    found_keywords = [kw for kw in important_keywords if kw in text_lower]
+    key_terms.extend(found_keywords[:3])  # Add first 3 found keywords
+    
+    # Take a substantial portion of the original text (more than 200 chars)
+    main_text = text[:500] if len(text) > 50 else text
+    
+    # Build the comprehensive query
+    if key_terms:
+        # Combine the main text with key terms for a comprehensive search
+        key_terms_str = ' '.join(set(key_terms[:8]))  # Unique terms, max 8
+        comprehensive_query = f"{main_text} {key_terms_str}"
+    else:
+        comprehensive_query = main_text
+    
+    # Limit overall length but allow much longer than before
+    if len(comprehensive_query) > 800:
+        comprehensive_query = comprehensive_query[:800]
+    
+    return comprehensive_query.strip()
 
 
 def extract_urls_from_text(text: str) -> List[str]:
