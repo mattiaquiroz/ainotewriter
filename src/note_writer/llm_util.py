@@ -779,20 +779,48 @@ def _build_comprehensive_search_query(original_query: str) -> str:
     Build a single comprehensive search query instead of multiple separate queries
     This reduces API calls and improves efficiency
     """
+    import re
+    
     # Clean and limit the query length
     query = original_query.strip()[:150]  # Limit to avoid overly long queries
     
     # Remove problematic characters that might cause search issues
     query = query.replace('```', '').replace('"', '').strip()
     
+    # Extract important elements from the query to build a more targeted search
+    capitalized_terms = re.findall(r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b', query)
+    years = re.findall(r'\b(20[0-9]{2})\b', query)
+    numbers = re.findall(r'\b\d+\b', query)
+    
     # Build a comprehensive query that covers what the multiple queries were trying to achieve
     # Instead of 4 separate API calls, use search operators in a single call
-    if any(year in query for year in ['2024', '2025']):
-        # Already has recent year indicators
-        enhanced_query = f'"{query}" OR ({query} news) OR ({query} official)'
-    else:
-        # Add recency indicators
-        enhanced_query = f'"{query}" OR ({query} 2024) OR ({query} 2025) OR ({query} news recent)'
+    query_parts = [f'"{query}"']
+    
+    # Add capitalized terms (likely proper nouns, names, places) for more specific searches
+    if capitalized_terms:
+        for term in capitalized_terms[:3]:  # Limit to avoid overly long queries
+            query_parts.append(f'"{term}"')
+    
+    # Add year-specific searches if years are found
+    if years:
+        for year in years[:2]:  # Limit to avoid overly long queries
+            query_parts.append(f'({query} {year})')
+    elif not any(year in query for year in ['2024', '2025']):
+        # Add recency indicators if no years found
+        query_parts.append(f'({query} 2024)')
+        query_parts.append(f'({query} 2025)')
+    
+    # Add numbers for more specific searches (could be important figures, statistics, etc.)
+    if numbers:
+        for num in numbers[:2]:  # Limit to avoid overly long queries
+            query_parts.append(f'("{query} {num}")')
+    
+    # Add context-specific searches
+    query_parts.append(f'({query} news)')
+    query_parts.append(f'({query} official)')
+    
+    # Join all parts with OR to create comprehensive search
+    enhanced_query = ' OR '.join(query_parts)
     
     return enhanced_query
 
