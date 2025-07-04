@@ -321,7 +321,13 @@ def search_web_for_recent_info(query: str, max_results: int = 10) -> str:
             is_failure = not results or any(pattern in results for pattern in failure_patterns)
             
             if not is_failure:
-                print(f"✅ {engine_name} successful - found results")
+                # Extract result count from the results string
+                result_count = 0
+                if "Result 1:" in results:
+                    # Count the number of "Result X:" patterns
+                    result_count = len(re.findall(r'Result \d+:', results))
+                
+                print(f"✅ {engine_name} successful - found {result_count} results")
                 # Cache the successful result
                 _search_cache[cache_key] = (current_time, results)
                 return results
@@ -896,7 +902,6 @@ def _calculate_priority_score(title: str, body: str, url: str, original_query: s
     
     return score
 
-
 def get_gemini_search_response(prompt: str, temperature: float = 0.8):
     """
     Get a response from Gemini with enhanced search capabilities.
@@ -918,8 +923,8 @@ def get_gemini_search_response(prompt: str, temperature: float = 0.8):
     # Always perform web search for current information
     web_results = ""
     if post_text.strip():
-        # Perform web search for recent information
-        web_results = search_web_for_recent_info(post_text[:200])  # Limit query length
+        # Perform web search for recent information using the enhanced query
+        web_results = search_web_for_recent_info(post_text[:800])
         
         if "Web search error" in web_results or "unavailable" in web_results:
             print(f"Web search failed: {web_results}")
