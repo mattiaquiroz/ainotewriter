@@ -356,19 +356,20 @@ def _search_with_duckduckgo(query: str, max_results: int = 10) -> str:
         
         all_results = []
         seen_urls = set()
-        max_attempts = 2  # Reduced attempts for faster fallback
-        base_delay = 1.0  # Reduced delay for faster fallback
+        max_attempts = 3  # Increased attempts for better reliability
+        base_delay = 3.0  # Increased base delay for rate limiting
         
         for attempt in range(max_attempts):
             try:
                 if attempt > 0:
-                    delay = base_delay * (2 ** (attempt - 1)) + random.uniform(0, 0.5)
+                    delay = base_delay * (2 ** (attempt - 1)) + random.uniform(0.5, 1.5)
+                    print(f"Rate limiting: waiting {delay:.1f} seconds...")
                     time.sleep(delay)
                 
                 with DDGS() as ddgs:
                     search_results = list(ddgs.text(
                         enhanced_query, 
-                        max_results=max_results * 2,
+                        max_results=max_results * 3,  # Get more results to filter from
                         safesearch='moderate',
                         region='wt-wt',
                         timelimit='m'
@@ -400,13 +401,21 @@ def _search_with_duckduckgo(query: str, max_results: int = 10) -> str:
                     
             except Exception as e:
                 error_str = str(e).lower()
-                if any(indicator in error_str for indicator in ['ratelimit', '202', 'rate limit', 'too many requests']):
+                if any(indicator in error_str for indicator in ['ratelimit', '202', 'rate limit', 'too many requests', 'rate_limit']):
+                    print(f"🚫 DuckDuckGo rate limit detected (attempt {attempt + 1}/{max_attempts})")
                     if attempt < max_attempts - 1:
+                        longer_delay = base_delay * (3 ** attempt) + random.uniform(1, 3)
+                        print(f"Rate limiting: waiting {longer_delay:.1f} seconds...")
+                        time.sleep(longer_delay)
                         continue
                     else:
                         raise Exception("DuckDuckGo rate limit exceeded")
                 else:
-                    raise e
+                    print(f"DuckDuckGo error: {str(e)}")
+                    if attempt < max_attempts - 1:
+                        continue
+                    else:
+                        raise e
         
         if not all_results:
             return "No recent web search results found"
@@ -443,89 +452,127 @@ def _search_with_yagooglesearch(query: str, max_results: int = 10) -> str:
         except ImportError:
             raise Exception("yagooglesearch package not installed. Install with: pip install yagooglesearch")
         
-        # Clean query for Google search
-        clean_query = query.strip()[:150]
+        # Clean query for Google search and try multiple query strategies
+        clean_query = query.strip()[:200]  # Increased limit
         
-        client = yagooglesearch.SearchClient(
-            clean_query,
-            tbs="li:1",  # Verbatim search
-            max_search_result_urls_to_return=max_results * 2,
-            http_429_cool_off_time_in_minutes=2,  # Shorter cooloff for faster fallback
-            http_429_cool_off_factor=1.5,
-            minimum_delay_between_paged_results_in_seconds=2,
-            verbosity=1,  # Minimal verbosity
-            verbose_output=False,
-            yagooglesearch_manages_http_429s=True
-        )
+        # Try different search strategies
+        search_strategies = [
+            clean_query,  # Original query
+            f'"{clean_query}"',  # Exact phrase
+            f"{clean_query} 2024 OR 2025",  # With recent years
+            f"{clean_query} news",  # With news keyword
+        ]
         
-        client.assign_random_user_agent()
-        urls = client.search()
-        
-        if not urls or "HTTP_429_DETECTED" in urls:
-            return "Google search rate limited or no results found"
-        
-        # Process the URLs to get titles and descriptions
-        results = []
-        seen_urls = set()
-        
-        for url in urls[:max_results]:
-            if url in seen_urls or _should_skip_url(url):
-                continue
-            
-            seen_urls.add(url)
-            
-            # Try to get page title and description
+        for strategy_idx, search_query in enumerate(search_strategies):
             try:
-                response = requests.get(url, timeout=5, headers={
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                })
+                print(f"  🔍 Google strategy {strategy_idx + 1}: {search_query[:80]}...")
                 
-                if response.status_code == 200:
-                    from bs4 import BeautifulSoup
-                    soup = BeautifulSoup(response.content, 'html.parser')
+                client = yagooglesearch.SearchClient(
+                    search_query,
+                    tbs="li:1",  # Verbatim search
+                    max_search_result_urls_to_return=max_results * 3,  # Get more results to filter
+                    http_429_cool_off_time_in_minutes=3,  # Longer cooloff
+                    http_429_cool_off_factor=2.0,  # Increased factor
+                    minimum_delay_between_paged_results_in_seconds=3,  # Longer delay
+                    verbosity=1,  # Minimal verbosity
+                    verbose_output=False,
+                    yagooglesearch_manages_http_429s=True
+                )
+                
+                client.assign_random_user_agent()
+                urls = client.search()
+                
+                if urls and "HTTP_429_DETECTED" not in urls:
+                    # Process the URLs to get titles and descriptions
+                    results = []
+                    seen_urls = set()
                     
-                    title = "No title"
-                    if soup.title and soup.title.string:
-                        title = soup.title.string.strip()
+                    for url in urls[:max_results * 2]:  # Process more URLs
+                        if url in seen_urls or _should_skip_url(url):
+                            continue
+                        
+                        seen_urls.add(url)
+                        
+                        # Try to get page title and description with better error handling
+                        try:
+                            response = requests.get(url, timeout=8, headers={
+                                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                            })
+                            
+                            if response.status_code == 200:
+                                from bs4 import BeautifulSoup
+                                soup = BeautifulSoup(response.content, 'html.parser')
+                                
+                                title = "No title"
+                                if soup.title and soup.title.string:
+                                    title = soup.title.string.strip()[:200]  # Limit title length
+                                
+                                description = "No description"
+                                # Try multiple meta description selectors
+                                meta_desc = soup.find('meta', attrs={'name': 'description'}) or \
+                                           soup.find('meta', attrs={'property': 'og:description'}) or \
+                                           soup.find('meta', attrs={'name': 'twitter:description'})
+                                
+                                if meta_desc and hasattr(meta_desc, 'get'):
+                                    content = meta_desc.get('content')  # type: ignore
+                                    if isinstance(content, str):
+                                        description = content.strip()[:300]  # Limit description length
+                                
+                                # If no meta description, try to get text from the page
+                                if description == "No description":
+                                    paragraphs = soup.find_all('p')
+                                    if paragraphs:
+                                        description = ' '.join([p.get_text().strip() for p in paragraphs[:3]])[:300]
+                                
+                                results.append({
+                                    'title': title,
+                                    'description': description,
+                                    'url': url,
+                                    'priority': _calculate_priority_score(title, description, url, query)
+                                })
+                                
+                        except Exception as e:
+                            # If we can't get details, still include the URL with basic info
+                            results.append({
+                                'title': url.split('/')[-1] if '/' in url else url,
+                                'description': f"Description unavailable: {str(e)[:100]}",
+                                'url': url,
+                                'priority': 1
+                            })
+                        
+                        if len(results) >= max_results:
+                            break
                     
-                    description = "No description"
-                    meta_desc = soup.find('meta', attrs={'name': 'description'})
-                    if meta_desc and hasattr(meta_desc, 'get'):
-                        content = meta_desc.get('content')  # type: ignore
-                        if isinstance(content, str):
-                            description = content.strip()
+                    if results:
+                        # Sort by priority and format results
+                        results.sort(key=lambda x: x['priority'], reverse=True)
+                        
+                        formatted_results = []
+                        for i, result in enumerate(results[:max_results]):
+                            formatted_results.append(
+                                f"Result {i+1} (Priority: {result['priority']}):\n"
+                                f"Title: {result['title']}\n"
+                                f"Description: {result['description']}\n"
+                                f"URL: {result['url']}\n"
+                            )
+                        
+                        return f"RECENT WEB SEARCH RESULTS for '{query}' (Google):\n\n" + "\n".join(formatted_results)
+                else:
+                    print(f"    ⚠️ Strategy {strategy_idx + 1} failed: rate limited or no results")
                     
-                    results.append({
-                        'title': title,
-                        'description': description,
-                        'url': url
-                    })
-                    
-            except Exception:
-                # If we can't get details, just use the URL
-                results.append({
-                    'title': url.split('/')[-1] if '/' in url else url,
-                    'description': "Description unavailable",
-                    'url': url
-                })
-            
-            if len(results) >= max_results:
-                break
+            except Exception as e:
+                error_str = str(e).lower()
+                if "429" in error_str or "rate limit" in error_str:
+                    print(f"    🚫 Google rate limit hit on strategy {strategy_idx + 1}")
+                    if strategy_idx < len(search_strategies) - 1:
+                        print(f"    ⏳ Waiting before trying next strategy...")
+                        time.sleep(5)  # Wait between strategies
+                        continue
+                else:
+                    print(f"    ❌ Google search error on strategy {strategy_idx + 1}: {str(e)}")
+                    continue
         
-        if not results:
-            return "No valid results found from Google search"
-        
-        # Format results
-        formatted_results = []
-        for i, result in enumerate(results):
-            formatted_results.append(
-                f"Result {i+1}:\n"
-                f"Title: {result['title']}\n"
-                f"Description: {result['description']}\n"
-                f"URL: {result['url']}\n"
-            )
-        
-        return f"RECENT WEB SEARCH RESULTS for '{query}' (Google):\n\n" + "\n".join(formatted_results)
+        return "Google search rate limited or no results found"
         
     except Exception as e:
         raise Exception(f"Google search error: {str(e)}")
@@ -541,7 +588,7 @@ def _search_with_rss_feeds(query: str, max_results: int = 10) -> str:
         except ImportError:
             raise Exception("feedparser package not installed. Install with: pip install feedparser")
         
-        # Major news RSS feeds
+        # Expanded list of major news RSS feeds
         rss_feeds = [
             "https://rss.cnn.com/rss/edition.rss",
             "https://feeds.bbci.co.uk/news/rss.xml",
@@ -549,23 +596,74 @@ def _search_with_rss_feeds(query: str, max_results: int = 10) -> str:
             "https://rss.ap.org/rss/apf-topnews.rss",
             "https://feeds.npr.org/1001/rss.xml",
             "https://abcnews.go.com/abcnews/topstories",
-            "https://feeds.nbcnews.com/nbcnews/public/news"
+            "https://feeds.nbcnews.com/nbcnews/public/news",
+            "https://feeds.foxnews.com/foxnews/latest",
+            "https://feeds.washingtonpost.com/rss/world",
+            "https://rss.nytimes.com/services/xml/rss/nyt/World.xml",
+            "https://feeds.bloomberg.com/markets/news.rss",
+            "https://feeds.theguardian.com/theguardian/world/rss",
+            "https://feeds.politico.com/politico/rss",
+            "https://feeds.huffingtonpost.com/huffingtonpost/raw_feed",
+            "https://feeds.usatoday.com/usatoday-NewsTopStories"
         ]
         
         all_entries = []
         query_lower = query.lower()
+        query_terms = query_lower.split()
+        
+        # Create more sophisticated search terms
+        search_terms = query_terms.copy()
+        
+        # Add key terms from the query for better matching
+        import re
+        capitalized_terms = re.findall(r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b', query)
+        for term in capitalized_terms:
+            search_terms.append(term.lower())
+        
+        # Extract numbers and years for better matching
+        numbers = re.findall(r'\b\d+\b', query)
+        search_terms.extend(numbers)
+        
+        print(f"🔍 Searching RSS feeds with terms: {search_terms[:10]}...")
+        
+        successful_feeds = 0
+        failed_feeds = 0
         
         for feed_url in rss_feeds:
             try:
+                print(f"  📡 Checking feed: {feed_url}")
                 feed = feedparser.parse(feed_url)
                 
-                for entry in feed.entries:
+                # Check if the feed was parsed successfully
+                if hasattr(feed, 'status') and feed.status >= 400:
+                    print(f"    ❌ Feed returned status {feed.status}")
+                    failed_feeds += 1
+                    continue
+                
+                if not hasattr(feed, 'entries') or not feed.entries:
+                    print(f"    ❌ No entries found in feed")
+                    failed_feeds += 1
+                    continue
+                
+                feed_entries_found = 0
+                for entry in feed.entries[:50]:  # Check more entries per feed
                     title = entry.get('title', '')
                     summary = entry.get('summary', entry.get('description', ''))
                     link = entry.get('link', '')
                     
-                    # Check if query terms appear in title or summary
-                    if any(term in (title + summary).lower() for term in query_lower.split()):
+                    # More sophisticated relevance checking
+                    content_to_check = (title + ' ' + summary).lower()
+                    
+                    # Check if any search terms appear in the content
+                    relevance_score = 0
+                    for term in search_terms:
+                        if term in content_to_check:
+                            relevance_score += 3
+                        # Check for partial matches
+                        if any(term in word for word in content_to_check.split()):
+                            relevance_score += 1
+                    
+                    if relevance_score > 0:
                         # Safely extract domain from URL
                         try:
                             from urllib.parse import urlparse
@@ -579,12 +677,22 @@ def _search_with_rss_feeds(query: str, max_results: int = 10) -> str:
                             'summary': summary,
                             'link': link,
                             'source': domain,
-                            'relevance': _calculate_relevance_score(title + summary, query)
+                            'relevance': relevance_score
                         })
-                        
+                        feed_entries_found += 1
+                
+                if feed_entries_found > 0:
+                    print(f"    ✅ Found {feed_entries_found} relevant entries")
+                    successful_feeds += 1
+                else:
+                    print(f"    ⚠️ No relevant entries found")
+                    
             except Exception as e:
-                print(f"Failed to parse RSS feed {feed_url}: {e}")
+                print(f"    ❌ Failed to parse RSS feed {feed_url}: {e}")
+                failed_feeds += 1
                 continue
+        
+        print(f"📊 RSS Search Summary: {successful_feeds} successful feeds, {failed_feeds} failed feeds")
         
         if not all_entries:
             return "No relevant news found in RSS feeds"
@@ -599,7 +707,7 @@ def _search_with_rss_feeds(query: str, max_results: int = 10) -> str:
             formatted_results.append(
                 f"Result {i+1} (Relevance: {entry['relevance']}):\n"
                 f"Title: {entry['title']}\n"
-                f"Description: {entry['summary'][:200]}...\n"
+                f"Description: {entry['summary'][:300]}...\n"
                 f"URL: {entry['link']}\n"
                 f"Source: {entry['source']}\n"
             )
@@ -787,11 +895,15 @@ def _build_comprehensive_search_query(original_query: str) -> str:
     """
     import re
     
-    # Clean and limit the query length
-    query = original_query.strip()[:150]  # Limit to avoid overly long queries
+    # Increased query length limit to allow for more detailed searches
+    query = original_query.strip()[:300]  # Increased from 150 to 300 characters
     
     # Remove problematic characters that might cause search issues
     query = query.replace('```', '').replace('"', '').strip()
+    
+    # If query is too short, return it as-is to avoid over-complicating simple queries
+    if len(query) < 10:
+        return query
     
     # Extract important elements from the query to build a more targeted search
     capitalized_terms = re.findall(r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b', query)
@@ -908,27 +1020,70 @@ def get_gemini_search_response(prompt: str, temperature: float = 0.8):
     Always performs web search to get the most current information available.
     """
     
-    # Extract key terms for web search from the post content
+    # Extract key terms for web search from the post content with improved logic
     lines = prompt.split('\n')
     post_text = ""
+    
+    # Look for the post text section with multiple possible formats
+    post_text_indicators = ['Post text:', 'post text:', 'POST TEXT:']
+    
     for line in lines:
-        if 'Post text:' in line:
+        if any(indicator in line for indicator in post_text_indicators):
             # Find the post text section
             start_idx = lines.index(line)
-            for i in range(start_idx + 1, min(start_idx + 10, len(lines))):
-                if lines[i].strip() and not lines[i].startswith('```'):
-                    post_text += lines[i] + " "
+            
+            # Extract text from multiple lines after the indicator
+            for i in range(start_idx + 1, min(start_idx + 20, len(lines))):
+                if i < len(lines):
+                    current_line = lines[i].strip()
+                    
+                    # Stop if we hit another section or formatting
+                    if current_line.startswith('```') or current_line.startswith('*') or current_line.startswith('Summary of images'):
+                        break
+                    
+                    # Add non-empty lines to post text
+                    if current_line:
+                        post_text += current_line + " "
             break
+    
+    # If no explicit post text found, try to extract from the entire prompt
+    if not post_text.strip():
+        # Look for quoted content or text that looks like a post
+        import re
+        
+        # Try to find text within quotes or after certain patterns
+        quote_matches = re.findall(r'```\s*([^`]+)\s*```', prompt, re.DOTALL)
+        if quote_matches:
+            post_text = quote_matches[0].strip()
+        else:
+            # Extract text that looks like social media content (has certain characteristics)
+            lines_without_formatting = [line.strip() for line in lines if line.strip() and not line.startswith(('*', '```', 'You will', 'Instructions:', 'CURRENT DATE', 'CRITICAL:', 'IMPORTANT:', 'SPECIAL'))]
+            if lines_without_formatting:
+                post_text = " ".join(lines_without_formatting[:10])  # Take first 10 relevant lines
+    
+    # Clean and prepare the search query
+    if post_text.strip():
+        # Remove URLs and handles from the post text for better searching
+        post_text = re.sub(r'https?://\S+', '', post_text)
+        post_text = re.sub(r'@\w+', '', post_text)
+        post_text = re.sub(r'#\w+', '', post_text)
+        post_text = post_text.strip()
     
     # Always perform web search for current information
     web_results = ""
     if post_text.strip():
+        # Increased search query length to allow for more detailed searches
+        search_query = post_text[:1200]  # Increased from 800 to 1200 characters
+        print(f"🔍 Searching with query: {search_query[:100]}...")
+        
         # Perform web search for recent information using the enhanced query
-        web_results = search_web_for_recent_info(post_text[:800])
+        web_results = search_web_for_recent_info(search_query)
         
         if "Web search error" in web_results or "unavailable" in web_results:
             print(f"Web search failed: {web_results}")
             web_results = ""
+    else:
+        print("⚠️ No post text found to search with")
     
     # Get Gemini's response with enhanced prompt including web search results
     enhanced_prompt = prompt
