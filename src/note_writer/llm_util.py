@@ -295,11 +295,9 @@ def search_web_for_recent_info(query: str, max_results: int = 10) -> str:
     
     # Try multiple search engines in order of preference
     search_engines = [
-        ("DuckDuckGo", _search_with_duckduckgo),
         ("Google (yagooglesearch)", _search_with_yagooglesearch), 
         ("RSS Feeds", _search_with_rss_feeds),
-        ("News Scraper", _search_with_news_scraper),
-        ("Alternative DDG", _search_with_alternative_ddg)
+        ("News Scraper", _search_with_news_scraper)
     ]
     
     for engine_name, search_func in search_engines:
@@ -309,13 +307,11 @@ def search_web_for_recent_info(query: str, max_results: int = 10) -> str:
             
             # Check if the result is a failure message from any search engine
             failure_patterns = [
-                "No recent web search results found",  # DuckDuckGo
                 "Web search error",  # General error
                 "Google search rate limited or no results found",  # Google
                 "No valid results found from Google search",  # Google
                 "No relevant news found in RSS feeds",  # RSS
                 "No articles found through web scraping",  # News Scraper
-                "No results found with alternative DuckDuckGo",  # Alternative DDG
             ]
             
             is_failure = not results or any(pattern in results for pattern in failure_patterns)
@@ -343,102 +339,6 @@ def search_web_for_recent_info(query: str, max_results: int = 10) -> str:
     _search_cache[cache_key] = (current_time, error_msg)
     return error_msg
 
-
-def _search_with_duckduckgo(query: str, max_results: int = 10) -> str:
-    """
-    Original DuckDuckGo search implementation with enhanced error handling
-    """
-    try:
-        from duckduckgo_search import DDGS
-        
-        # Create a single comprehensive search query instead of multiple separate searches
-        enhanced_query = _build_comprehensive_search_query(query)
-        
-        all_results = []
-        seen_urls = set()
-        max_attempts = 3  # Increased attempts for better reliability
-        base_delay = 3.0  # Increased base delay for rate limiting
-        
-        for attempt in range(max_attempts):
-            try:
-                if attempt > 0:
-                    delay = base_delay * (2 ** (attempt - 1)) + random.uniform(0.5, 1.5)
-                    print(f"Rate limiting: waiting {delay:.1f} seconds...")
-                    time.sleep(delay)
-                
-                with DDGS() as ddgs:
-                    search_results = list(ddgs.text(
-                        enhanced_query, 
-                        max_results=max_results * 3,  # Get more results to filter from
-                        safesearch='moderate',
-                        region='wt-wt',
-                        timelimit='m'
-                    ))
-                    
-                    for result in search_results:
-                        title = result.get('title', 'No title')
-                        body = result.get('body', 'No description')
-                        url = result.get('href', 'No URL')
-                        
-                        if url in seen_urls or _should_skip_url(url):
-                            continue
-                            
-                        seen_urls.add(url)
-                        priority_score = _calculate_priority_score(title, body, url, query)
-                        
-                        all_results.append({
-                            'title': title,
-                            'body': body,
-                            'url': url,
-                            'priority': priority_score
-                        })
-                        
-                        if len(all_results) >= max_results:
-                            break
-                
-                if all_results:
-                    break
-                    
-            except Exception as e:
-                error_str = str(e).lower()
-                if any(indicator in error_str for indicator in ['ratelimit', '202', 'rate limit', 'too many requests', 'rate_limit']):
-                    print(f"🚫 DuckDuckGo rate limit detected (attempt {attempt + 1}/{max_attempts})")
-                    if attempt < max_attempts - 1:
-                        longer_delay = base_delay * (3 ** attempt) + random.uniform(1, 3)
-                        print(f"Rate limiting: waiting {longer_delay:.1f} seconds...")
-                        time.sleep(longer_delay)
-                        continue
-                    else:
-                        raise Exception("DuckDuckGo rate limit exceeded")
-                else:
-                    print(f"DuckDuckGo error: {str(e)}")
-                    if attempt < max_attempts - 1:
-                        continue
-                    else:
-                        raise e
-        
-        if not all_results:
-            return "No recent web search results found"
-        
-        # Sort by priority and format results
-        all_results.sort(key=lambda x: x['priority'], reverse=True)
-        top_results = all_results[:max_results]
-        
-        formatted_results = []
-        for i, result in enumerate(top_results):
-            formatted_results.append(
-                f"Result {i+1} (Priority Score: {result['priority']}):\n"
-                f"Title: {result['title']}\n"
-                f"Description: {result['body']}\n"
-                f"URL: {result['url']}\n"
-            )
-        
-        return f"RECENT WEB SEARCH RESULTS for '{query}' (DuckDuckGo):\n\n" + "\n".join(formatted_results)
-        
-    except ImportError:
-        raise Exception("duckduckgo-search package not installed")
-    except Exception as e:
-        raise Exception(f"DuckDuckGo search error: {str(e)}")
 
 
 def _search_with_yagooglesearch(query: str, max_results: int = 10) -> str:
@@ -807,65 +707,6 @@ def _search_with_news_scraper(query: str, max_results: int = 10) -> str:
         raise Exception(f"News scraping error: {str(e)}")
 
 
-def _search_with_alternative_ddg(query: str, max_results: int = 10) -> str:
-    """
-    Alternative DuckDuckGo implementation using different approach
-    """
-    try:
-        # Try direct requests to DuckDuckGo
-        search_url = "https://lite.duckduckgo.com/lite/"
-        
-        params = {
-            'q': query,
-            'b': '',
-            'kl': 'wt-wt',
-            'df': 'm'
-        }
-        
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
-        
-        response = requests.post(search_url, data=params, headers=headers, timeout=10)
-        
-        if response.status_code == 200:
-            from bs4 import BeautifulSoup
-            soup = BeautifulSoup(response.content, 'html.parser')
-            
-            results = []
-            result_tables = soup.find_all('table', class_='result')
-            
-            for table in result_tables[:max_results]:
-                title_link = table.find('a', class_='result-link')
-                snippet = table.find('td', class_='result-snippet')
-                
-                if title_link:
-                    title = title_link.get_text().strip()
-                    url = title_link.get('href', '')
-                    description = snippet.get_text().strip() if snippet else "No description"
-                    
-                    results.append({
-                        'title': title,
-                        'url': url,
-                        'description': description
-                    })
-            
-            if results:
-                formatted_results = []
-                for i, result in enumerate(results):
-                    formatted_results.append(
-                        f"Result {i+1}:\n"
-                        f"Title: {result['title']}\n"
-                        f"Description: {result['description']}\n"
-                        f"URL: {result['url']}\n"
-                    )
-                
-                return f"RECENT WEB SEARCH RESULTS for '{query}' (Alternative DDG):\n\n" + "\n".join(formatted_results)
-            
-        return "No results found with alternative DuckDuckGo"
-        
-    except Exception as e:
-        raise Exception(f"Alternative DuckDuckGo error: {str(e)}")
 
 
 def _calculate_relevance_score(text: str, query: str) -> int:
