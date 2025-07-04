@@ -792,6 +792,9 @@ def _build_comprehensive_search_query(original_query: str) -> str:
     years = re.findall(r'\b(20[0-9]{2})\b', query)
     numbers = re.findall(r'\b\d+\b', query)
     
+    # Remove years from numbers to avoid duplication
+    non_year_numbers = [num for num in numbers if num not in years]
+    
     # Build a comprehensive query that covers what the multiple queries were trying to achieve
     # Instead of 4 separate API calls, use search operators in a single call
     query_parts = [f'"{query}"']
@@ -801,19 +804,25 @@ def _build_comprehensive_search_query(original_query: str) -> str:
         for term in capitalized_terms[:3]:  # Limit to avoid overly long queries
             query_parts.append(f'"{term}"')
     
-    # Add year-specific searches if years are found
+    # Add year-specific searches if years are found (but only if not already in query)
     if years:
         for year in years[:2]:  # Limit to avoid overly long queries
-            query_parts.append(f'({query} {year})')
-    elif not any(year in query for year in ['2024', '2025']):
-        # Add recency indicators if no years found
+            # Only add if this year isn't already mentioned in the original query
+            if year not in original_query:
+                query_parts.append(f'({query} {year})')
+    
+    # Add recency indicators (2024/2025) unless they're already present in the query
+    if '2024' not in original_query:
         query_parts.append(f'({query} 2024)')
+    if '2025' not in original_query:
         query_parts.append(f'({query} 2025)')
     
-    # Add numbers for more specific searches (could be important figures, statistics, etc.)
-    if numbers:
-        for num in numbers[:2]:  # Limit to avoid overly long queries
-            query_parts.append(f'("{query} {num}")')
+    # Add non-year numbers for more specific searches (could be important figures, statistics, etc.)
+    if non_year_numbers:
+        for num in non_year_numbers[:2]:  # Limit to avoid overly long queries
+            # Only add if this number isn't already mentioned in the original query
+            if num not in original_query:
+                query_parts.append(f'("{query} {num}")')
     
     # Add context-specific searches
     query_parts.append(f'({query} news)')
