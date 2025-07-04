@@ -271,73 +271,99 @@ def gemini_describe_image(image_url: str, temperature: float = 0.01, max_retries
 
 def search_web_for_recent_info(query: str, max_results: int = 10) -> str:
     """
-    Search the web for recent information using DuckDuckGo search with rate limit handling
+    Search the web for recent information using multiple search engines with fallback
     Returns formatted search results or error message
+    """
+    # Check cache first to avoid duplicate API calls
+    cache_key = f"{query.strip()[:100]}_{max_results}"  # Limit key length
+    current_time = time.time()
+    
+    # Clean expired cache entries
+    expired_keys = [k for k, (timestamp, _) in _search_cache.items() 
+                   if current_time - timestamp > _cache_expiry_seconds]
+    for k in expired_keys:
+        del _search_cache[k]
+    
+    # Return cached result if available and not expired
+    if cache_key in _search_cache:
+        timestamp, cached_result = _search_cache[cache_key]
+        if current_time - timestamp <= _cache_expiry_seconds:
+            print(f"📋 Using cached search results for: {query[:50]}...")
+            return cached_result
+    
+    print(f"🔍 Starting multi-engine search for: {query[:50]}...")
+    
+    # Try multiple search engines in order of preference
+    search_engines = [
+        ("DuckDuckGo", _search_with_duckduckgo),
+        ("Google (yagooglesearch)", _search_with_yagooglesearch), 
+        ("RSS Feeds", _search_with_rss_feeds),
+        ("News Scraper", _search_with_news_scraper),
+        ("Alternative DDG", _search_with_alternative_ddg)
+    ]
+    
+    for engine_name, search_func in search_engines:
+        try:
+            print(f"🔍 Trying {engine_name}...")
+            results = search_func(query, max_results)
+            
+            if results and "No recent web search results found" not in results and "Web search error" not in results:
+                print(f"✅ {engine_name} successful - found results")
+                # Cache the successful result
+                _search_cache[cache_key] = (current_time, results)
+                return results
+            else:
+                print(f"⚠️ {engine_name} returned no results")
+                
+        except Exception as e:
+            print(f"❌ {engine_name} failed: {str(e)}")
+            continue
+    
+    # If all engines fail, return a helpful error message
+    error_msg = f"❌ All search engines failed for query: {query}. Please try again later or check your internet connection."
+    _search_cache[cache_key] = (current_time, error_msg)
+    return error_msg
+
+
+def _search_with_duckduckgo(query: str, max_results: int = 10) -> str:
+    """
+    Original DuckDuckGo search implementation with enhanced error handling
     """
     try:
         from duckduckgo_search import DDGS
         
-        # Check cache first to avoid duplicate API calls
-        cache_key = f"{query.strip()[:100]}_{max_results}"  # Limit key length
-        current_time = time.time()
-        
-        # Clean expired cache entries
-        expired_keys = [k for k, (timestamp, _) in _search_cache.items() 
-                       if current_time - timestamp > _cache_expiry_seconds]
-        for k in expired_keys:
-            del _search_cache[k]
-        
-        # Return cached result if available and not expired
-        if cache_key in _search_cache:
-            timestamp, cached_result = _search_cache[cache_key]
-            if current_time - timestamp <= _cache_expiry_seconds:
-                print(f"📋 Using cached search results for: {query[:50]}...")
-                return cached_result
-        
         # Create a single comprehensive search query instead of multiple separate searches
-        # This reduces API calls from 4 to 1, dramatically reducing rate limit issues
         enhanced_query = _build_comprehensive_search_query(query)
-        
-        print(f"🔍 Searching for: {enhanced_query}")
         
         all_results = []
         seen_urls = set()
-        max_attempts = 3
-        base_delay = 2.0  # Start with 2 second delay
+        max_attempts = 2  # Reduced attempts for faster fallback
+        base_delay = 1.0  # Reduced delay for faster fallback
         
         for attempt in range(max_attempts):
             try:
-                # Add delay between attempts to respect rate limits
                 if attempt > 0:
-                    delay = base_delay * (2 ** (attempt - 1)) + random.uniform(0, 1)
-                    print(f"⏰ Rate limit detected, waiting {delay:.1f}s before retry {attempt + 1}/{max_attempts}")
+                    delay = base_delay * (2 ** (attempt - 1)) + random.uniform(0, 0.5)
                     time.sleep(delay)
                 
-                # Use a single DDGS instance for the search
                 with DDGS() as ddgs:
-                    # Get more results initially for better filtering
                     search_results = list(ddgs.text(
                         enhanced_query, 
-                        max_results=max_results * 3,  # Get extra for filtering
+                        max_results=max_results * 2,
                         safesearch='moderate',
-                        region='wt-wt',  # Worldwide results
-                        timelimit='m'    # Recent results (last month)
+                        region='wt-wt',
+                        timelimit='m'
                     ))
-                    
-                    print(f"✅ Retrieved {len(search_results)} raw results")
                     
                     for result in search_results:
                         title = result.get('title', 'No title')
                         body = result.get('body', 'No description')
                         url = result.get('href', 'No URL')
                         
-                        # Skip duplicates and low-quality sources
                         if url in seen_urls or _should_skip_url(url):
                             continue
                             
                         seen_urls.add(url)
-                        
-                        # Calculate relevance and recency score
                         priority_score = _calculate_priority_score(title, body, url, query)
                         
                         all_results.append({
@@ -347,44 +373,29 @@ def search_web_for_recent_info(query: str, max_results: int = 10) -> str:
                             'priority': priority_score
                         })
                         
-                        # Stop once we have enough quality results
-                        if len(all_results) >= max_results * 2:
+                        if len(all_results) >= max_results:
                             break
                 
-                # If we got results, break out of retry loop
                 if all_results:
                     break
                     
             except Exception as e:
                 error_str = str(e).lower()
-                
-                # Check if this is a rate limit error
                 if any(indicator in error_str for indicator in ['ratelimit', '202', 'rate limit', 'too many requests']):
-                    print(f"⚠️ Rate limit detected: {str(e)}")
                     if attempt < max_attempts - 1:
-                        continue  # Retry with backoff
+                        continue
                     else:
-                        return f"Rate limit exceeded after {max_attempts} attempts. Please try again later."
+                        raise Exception("DuckDuckGo rate limit exceeded")
                 else:
-                    print(f"❌ Search failed: {str(e)}")
-                    if attempt < max_attempts - 1:
-                        continue  # Retry for other errors too
-                    else:
-                        return f"Web search error after {max_attempts} attempts: {str(e)}"
+                    raise e
         
         if not all_results:
-            no_results_msg = f"No recent web search results found for: {query}"
-            # Cache the no-results response too
-            _search_cache[cache_key] = (current_time, no_results_msg)
-            return no_results_msg
+            return "No recent web search results found"
         
-        # Sort by priority score and take top results
+        # Sort by priority and format results
         all_results.sort(key=lambda x: x['priority'], reverse=True)
         top_results = all_results[:max_results]
         
-        print(f"📊 Returning top {len(top_results)} results (from {len(all_results)} total)")
-        
-        # Format results for output
         formatted_results = []
         for i, result in enumerate(top_results):
             formatted_results.append(
@@ -394,17 +405,344 @@ def search_web_for_recent_info(query: str, max_results: int = 10) -> str:
                 f"URL: {result['url']}\n"
             )
         
-        final_result = f"RECENT WEB SEARCH RESULTS for '{query}' (sorted by relevance and recency):\n\n" + "\n".join(formatted_results)
-        
-        # Cache the successful result
-        _search_cache[cache_key] = (current_time, final_result)
-        
-        return final_result
+        return f"RECENT WEB SEARCH RESULTS for '{query}' (DuckDuckGo):\n\n" + "\n".join(formatted_results)
         
     except ImportError:
-        return "Web search unavailable (duckduckgo-search package not installed)"
+        raise Exception("duckduckgo-search package not installed")
     except Exception as e:
-        return f"Web search error: {str(e)}"
+        raise Exception(f"DuckDuckGo search error: {str(e)}")
+
+
+def _search_with_yagooglesearch(query: str, max_results: int = 10) -> str:
+    """
+    Google search using yagooglesearch library with rate limit handling
+    """
+    try:
+        # Try importing with proper error handling
+        try:
+            import yagooglesearch  # type: ignore
+        except ImportError:
+            raise Exception("yagooglesearch package not installed. Install with: pip install yagooglesearch")
+        
+        # Clean query for Google search
+        clean_query = query.strip()[:150]
+        
+        client = yagooglesearch.SearchClient(
+            clean_query,
+            tbs="li:1",  # Verbatim search
+            max_search_result_urls_to_return=max_results * 2,
+            http_429_cool_off_time_in_minutes=2,  # Shorter cooloff for faster fallback
+            http_429_cool_off_factor=1.5,
+            minimum_delay_between_paged_results_in_seconds=2,
+            verbosity=1,  # Minimal verbosity
+            verbose_output=False,
+            yagooglesearch_manages_http_429s=True
+        )
+        
+        client.assign_random_user_agent()
+        urls = client.search()
+        
+        if not urls or "HTTP_429_DETECTED" in urls:
+            return "Google search rate limited or no results found"
+        
+        # Process the URLs to get titles and descriptions
+        results = []
+        seen_urls = set()
+        
+        for url in urls[:max_results]:
+            if url in seen_urls or _should_skip_url(url):
+                continue
+            
+            seen_urls.add(url)
+            
+            # Try to get page title and description
+            try:
+                response = requests.get(url, timeout=5, headers={
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                })
+                
+                if response.status_code == 200:
+                    from bs4 import BeautifulSoup
+                    soup = BeautifulSoup(response.content, 'html.parser')
+                    
+                    title = "No title"
+                    if soup.title and soup.title.string:
+                        title = soup.title.string.strip()
+                    
+                    description = "No description"
+                    meta_desc = soup.find('meta', attrs={'name': 'description'})
+                    if meta_desc and hasattr(meta_desc, 'get'):
+                        content = meta_desc.get('content')  # type: ignore
+                        if isinstance(content, str):
+                            description = content.strip()
+                    
+                    results.append({
+                        'title': title,
+                        'description': description,
+                        'url': url
+                    })
+                    
+            except Exception:
+                # If we can't get details, just use the URL
+                results.append({
+                    'title': url.split('/')[-1] if '/' in url else url,
+                    'description': "Description unavailable",
+                    'url': url
+                })
+            
+            if len(results) >= max_results:
+                break
+        
+        if not results:
+            return "No valid results found from Google search"
+        
+        # Format results
+        formatted_results = []
+        for i, result in enumerate(results):
+            formatted_results.append(
+                f"Result {i+1}:\n"
+                f"Title: {result['title']}\n"
+                f"Description: {result['description']}\n"
+                f"URL: {result['url']}\n"
+            )
+        
+        return f"RECENT WEB SEARCH RESULTS for '{query}' (Google):\n\n" + "\n".join(formatted_results)
+        
+    except Exception as e:
+        raise Exception(f"Google search error: {str(e)}")
+
+
+def _search_with_rss_feeds(query: str, max_results: int = 10) -> str:
+    """
+    Search recent news using RSS feeds from major news sources
+    """
+    try:
+        try:
+            import feedparser  # type: ignore
+        except ImportError:
+            raise Exception("feedparser package not installed. Install with: pip install feedparser")
+        
+        # Major news RSS feeds
+        rss_feeds = [
+            "https://rss.cnn.com/rss/edition.rss",
+            "https://feeds.bbci.co.uk/news/rss.xml",
+            "https://www.reuters.com/rssFeed/worldNews",
+            "https://rss.ap.org/rss/apf-topnews.rss",
+            "https://feeds.npr.org/1001/rss.xml",
+            "https://abcnews.go.com/abcnews/topstories",
+            "https://feeds.nbcnews.com/nbcnews/public/news"
+        ]
+        
+        all_entries = []
+        query_lower = query.lower()
+        
+        for feed_url in rss_feeds:
+            try:
+                feed = feedparser.parse(feed_url)
+                
+                for entry in feed.entries:
+                    title = entry.get('title', '')
+                    summary = entry.get('summary', entry.get('description', ''))
+                    link = entry.get('link', '')
+                    
+                    # Check if query terms appear in title or summary
+                    if any(term in (title + summary).lower() for term in query_lower.split()):
+                        all_entries.append({
+                            'title': title,
+                            'summary': summary,
+                            'link': link,
+                            'source': feed_url.split('/')[2],  # Extract domain
+                            'relevance': _calculate_relevance_score(title + summary, query)
+                        })
+                        
+            except Exception as e:
+                print(f"Failed to parse RSS feed {feed_url}: {e}")
+                continue
+        
+        if not all_entries:
+            return "No relevant news found in RSS feeds"
+        
+        # Sort by relevance and take top results
+        all_entries.sort(key=lambda x: x['relevance'], reverse=True)
+        top_entries = all_entries[:max_results]
+        
+        # Format results
+        formatted_results = []
+        for i, entry in enumerate(top_entries):
+            formatted_results.append(
+                f"Result {i+1} (Relevance: {entry['relevance']}):\n"
+                f"Title: {entry['title']}\n"
+                f"Description: {entry['summary'][:200]}...\n"
+                f"URL: {entry['link']}\n"
+                f"Source: {entry['source']}\n"
+            )
+        
+        return f"RECENT NEWS from RSS FEEDS for '{query}':\n\n" + "\n".join(formatted_results)
+        
+    except Exception as e:
+        raise Exception(f"RSS feed search error: {str(e)}")
+
+
+def _search_with_news_scraper(query: str, max_results: int = 10) -> str:
+    """
+    Scrape news from aggregator sites
+    """
+    try:
+        from bs4 import BeautifulSoup
+        
+        # Try scraping from news aggregator sites
+        aggregators = [
+            "https://news.google.com/search?q=" + query.replace(' ', '%20'),
+            "https://www.allsides.com/search?search=" + query.replace(' ', '+')
+        ]
+        
+        all_articles = []
+        
+        for url in aggregators:
+            try:
+                response = requests.get(url, timeout=10, headers={
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                })
+                
+                if response.status_code == 200:
+                    soup = BeautifulSoup(response.content, 'html.parser')
+                    
+                    # Look for article-like elements
+                    articles = soup.find_all(['article', 'div'], class_=re.compile(r'(article|news|story|item)', re.I))
+                    
+                    for article in articles[:max_results]:
+                        title_elem = article.find(['h1', 'h2', 'h3', 'h4'], text=True)
+                        link_elem = article.find('a', href=True)
+                        
+                        if title_elem and link_elem:
+                            title = title_elem.get_text().strip()
+                            link = link_elem.get('href')
+                            
+                            # Make relative URLs absolute
+                            if link.startswith('/'):
+                                from urllib.parse import urljoin
+                                link = urljoin(url, link)
+                            
+                            all_articles.append({
+                                'title': title,
+                                'url': link,
+                                'source': url.split('/')[2]
+                            })
+                            
+            except Exception as e:
+                print(f"Failed to scrape {url}: {e}")
+                continue
+        
+        if not all_articles:
+            return "No articles found through web scraping"
+        
+        # Remove duplicates and format results
+        seen_urls = set()
+        unique_articles = []
+        
+        for article in all_articles:
+            if article['url'] not in seen_urls:
+                seen_urls.add(article['url'])
+                unique_articles.append(article)
+                
+        unique_articles = unique_articles[:max_results]
+        
+        formatted_results = []
+        for i, article in enumerate(unique_articles):
+            formatted_results.append(
+                f"Result {i+1}:\n"
+                f"Title: {article['title']}\n"
+                f"URL: {article['url']}\n"
+                f"Source: {article['source']}\n"
+            )
+        
+        return f"RECENT NEWS from WEB SCRAPING for '{query}':\n\n" + "\n".join(formatted_results)
+        
+    except ImportError:
+        raise Exception("BeautifulSoup package not installed")
+    except Exception as e:
+        raise Exception(f"News scraping error: {str(e)}")
+
+
+def _search_with_alternative_ddg(query: str, max_results: int = 10) -> str:
+    """
+    Alternative DuckDuckGo implementation using different approach
+    """
+    try:
+        # Try direct requests to DuckDuckGo
+        search_url = "https://lite.duckduckgo.com/lite/"
+        
+        params = {
+            'q': query,
+            'b': '',
+            'kl': 'wt-wt',
+            'df': 'm'
+        }
+        
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+        
+        response = requests.post(search_url, data=params, headers=headers, timeout=10)
+        
+        if response.status_code == 200:
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup(response.content, 'html.parser')
+            
+            results = []
+            result_tables = soup.find_all('table', class_='result')
+            
+            for table in result_tables[:max_results]:
+                title_link = table.find('a', class_='result-link')
+                snippet = table.find('td', class_='result-snippet')
+                
+                if title_link:
+                    title = title_link.get_text().strip()
+                    url = title_link.get('href', '')
+                    description = snippet.get_text().strip() if snippet else "No description"
+                    
+                    results.append({
+                        'title': title,
+                        'url': url,
+                        'description': description
+                    })
+            
+            if results:
+                formatted_results = []
+                for i, result in enumerate(results):
+                    formatted_results.append(
+                        f"Result {i+1}:\n"
+                        f"Title: {result['title']}\n"
+                        f"Description: {result['description']}\n"
+                        f"URL: {result['url']}\n"
+                    )
+                
+                return f"RECENT WEB SEARCH RESULTS for '{query}' (Alternative DDG):\n\n" + "\n".join(formatted_results)
+            
+        return "No results found with alternative DuckDuckGo"
+        
+    except Exception as e:
+        raise Exception(f"Alternative DuckDuckGo error: {str(e)}")
+
+
+def _calculate_relevance_score(text: str, query: str) -> int:
+    """
+    Calculate relevance score for RSS feed entries
+    """
+    score = 0
+    text_lower = text.lower()
+    query_terms = query.lower().split()
+    
+    for term in query_terms:
+        # Exact term matches
+        score += text_lower.count(term) * 3
+        
+        # Partial matches
+        for word in text_lower.split():
+            if term in word:
+                score += 1
+    
+    return score
 
 
 def _build_comprehensive_search_query(original_query: str) -> str:
@@ -583,7 +921,7 @@ def fetch_page_content(url: str, timeout: int = 10) -> Tuple[Optional[str], int,
     """
     try:
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         }
         
         response = requests.get(url, timeout=timeout, headers=headers, allow_redirects=True)
