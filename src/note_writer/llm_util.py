@@ -779,20 +779,57 @@ def _build_comprehensive_search_query(original_query: str) -> str:
     Build a single comprehensive search query instead of multiple separate queries
     This reduces API calls and improves efficiency
     """
+    import re
+    
     # Clean and limit the query length
     query = original_query.strip()[:150]  # Limit to avoid overly long queries
     
     # Remove problematic characters that might cause search issues
     query = query.replace('```', '').replace('"', '').strip()
     
+    # Extract important elements from the query to build a more targeted search
+    capitalized_terms = re.findall(r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b', query)
+    years = re.findall(r'\b(20[0-9]{2})\b', query)
+    numbers = re.findall(r'\b\d+\b', query)
+    
+    # Remove years from numbers to avoid duplication
+    non_year_numbers = [num for num in numbers if num not in years]
+    
     # Build a comprehensive query that covers what the multiple queries were trying to achieve
     # Instead of 4 separate API calls, use search operators in a single call
-    if any(year in query for year in ['2024', '2025']):
-        # Already has recent year indicators
-        enhanced_query = f'"{query}" OR ({query} news) OR ({query} official)'
-    else:
-        # Add recency indicators
-        enhanced_query = f'"{query}" OR ({query} 2024) OR ({query} 2025) OR ({query} news recent)'
+    query_parts = [f'"{query}"']
+    
+    # Add capitalized terms (likely proper nouns, names, places) for more specific searches
+    if capitalized_terms:
+        for term in capitalized_terms[:3]:  # Limit to avoid overly long queries
+            query_parts.append(f'"{term}"')
+    
+    # Add year-specific searches if years are found (but only if not already in query)
+    if years:
+        for year in years[:2]:  # Limit to avoid overly long queries
+            # Only add if this year isn't already mentioned in the original query
+            if year not in original_query:
+                query_parts.append(f'({query} {year})')
+    
+    # Add recency indicators (2024/2025) unless they're already present in the query
+    if '2024' not in original_query:
+        query_parts.append(f'({query} 2024)')
+    if '2025' not in original_query:
+        query_parts.append(f'({query} 2025)')
+    
+    # Add non-year numbers for more specific searches (could be important figures, statistics, etc.)
+    if non_year_numbers:
+        for num in non_year_numbers[:2]:  # Limit to avoid overly long queries
+            # Only add if this number isn't already mentioned in the original query
+            if num not in original_query:
+                query_parts.append(f'("{query} {num}")')
+    
+    # Add context-specific searches
+    query_parts.append(f'({query} news)')
+    query_parts.append(f'({query} official)')
+    
+    # Join all parts with OR to create comprehensive search
+    enhanced_query = ' OR '.join(query_parts)
     
     return enhanced_query
 
