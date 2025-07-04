@@ -31,6 +31,8 @@ def _get_prompt_for_note_writing(post: Post, images_summary: str, search_results
         Your task is to determine whether the post is misleading and if it merits a Community Note.
 
         CURRENT DATE CONTEXT: Today is 2025. Pay special attention to claims about recent events from late 2024 through 2025.
+        
+        CRITICAL: Your training data may be outdated. ALWAYS prioritize information from live search results and web sources over your training knowledge, especially for recent events, political developments, elections, policy changes, and current affairs.
 
         Instructions:
 
@@ -85,6 +87,8 @@ def _get_prompt_for_live_search(post: Post, images_summary: str = ""):
     return f"""Below is a post on X. Conduct research to determine if the post is potentially misleading.
         
         CURRENT DATE CONTEXT: Today is 2025. Be especially thorough when fact-checking recent events from late 2024 through 2025, as this information may be very recent.
+        
+        IMPORTANT: Your knowledge may be outdated for recent events. You must search for and rely on current web sources rather than your training data for any claims about events in 2024-2025.
         
         CRITICAL REQUIREMENTS for sources:
         - Your response MUST include specific, direct URLs/links next to the claims they support

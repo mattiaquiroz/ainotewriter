@@ -264,7 +264,7 @@ def gemini_describe_image(image_url: str, temperature: float = 0.01, max_retries
         raise Exception(f"Error describing image with Gemini: {str(e)}")
 
 
-def search_web_for_recent_info(query: str, max_results: int = 5) -> str:
+def search_web_for_recent_info(query: str, max_results: int = 10) -> str:
     """
     Search the web for recent information using DuckDuckGo search
     Returns formatted search results or error message
@@ -272,28 +272,79 @@ def search_web_for_recent_info(query: str, max_results: int = 5) -> str:
     try:
         from duckduckgo_search import DDGS
         
-        # Create search query with time constraints for recent events
-        recent_query = f"{query} 2024 OR 2025"
+        # Multiple search strategies for comprehensive coverage
+        search_queries = [
+            f"{query} 2024 OR 2025",  # Recent events
+            f"{query} site:gov OR site:edu OR site:org",  # Official sources
+            f"{query} news 2024 2025",  # News coverage
+            f'"{query}" latest current',  # Exact phrase + recency
+        ]
         
-        search_results = []
-        with DDGS() as ddgs:
-            results = list(ddgs.text(recent_query, max_results=max_results, safesearch='moderate'))
-            
-            for i, result in enumerate(results[:max_results]):
-                title = result.get('title', 'No title')
-                body = result.get('body', 'No description')
-                url = result.get('href', 'No URL')
-                
-                # Filter out social media results that might be unreliable
-                if any(domain in url.lower() for domain in ['twitter.com', 'x.com', 'facebook.com', 'instagram.com', 'tiktok.com']):
-                    continue
+        all_results = []
+        seen_urls = set()
+        
+        for search_query in search_queries:
+            try:
+                with DDGS() as ddgs:
+                    results = list(ddgs.text(search_query, max_results=max_results, safesearch='moderate'))
                     
-                search_results.append(f"Result {i+1}:\nTitle: {title}\nDescription: {body}\nURL: {url}\n")
+                    for result in results:
+                        title = result.get('title', 'No title')
+                        body = result.get('body', 'No description')
+                        url = result.get('href', 'No URL')
+                        
+                        # Skip duplicates and unreliable social media
+                        if url in seen_urls:
+                            continue
+                        if any(domain in url.lower() for domain in ['twitter.com', 'x.com', 'facebook.com', 'instagram.com', 'tiktok.com']):
+                            continue
+                            
+                        seen_urls.add(url)
+                        
+                        # Prioritize official sources and recent news
+                        priority_score = 0
+                        if any(domain in url.lower() for domain in ['.gov', '.edu', '.org']):
+                            priority_score += 10
+                        if any(domain in url.lower() for domain in ['reuters.com', 'ap.org', 'cnn.com', 'nytimes.com', 'washingtonpost.com', 'bbc.com']):
+                            priority_score += 8
+                        if any(word in title.lower() for word in ['2024', '2025', 'latest', 'breaking', 'just', 'new']):
+                            priority_score += 5
+                        if any(word in body.lower() for word in ['2024', '2025', 'recent', 'latest', 'today', 'yesterday']):
+                            priority_score += 3
+                            
+                        all_results.append({
+                            'title': title,
+                            'body': body,
+                            'url': url,
+                            'query': search_query,
+                            'priority': priority_score
+                        })
+                        
+                        if len(all_results) >= max_results * 2:  # Get extra for filtering
+                            break
+                            
+            except Exception as e:
+                print(f"Search query '{search_query}' failed: {str(e)}")
+                continue
         
-        if not search_results:
+        if not all_results:
             return f"No recent web search results found for: {query}"
         
-        return f"WEB SEARCH RESULTS for '{query}':\n\n" + "\n".join(search_results)
+        # Sort by priority score, then take top results
+        all_results.sort(key=lambda x: x['priority'], reverse=True)
+        top_results = all_results[:max_results]
+        
+        formatted_results = []
+        for i, result in enumerate(top_results):
+            formatted_results.append(
+                f"Result {i+1} (Priority Score: {result['priority']}):\n"
+                f"Title: {result['title']}\n"
+                f"Description: {result['body']}\n"
+                f"URL: {result['url']}\n"
+                f"Search Query: {result['query']}\n"
+            )
+        
+        return f"ENHANCED WEB SEARCH RESULTS for '{query}' (sorted by relevance and recency):\n\n" + "\n".join(formatted_results)
         
     except ImportError:
         return "Web search unavailable (duckduckgo-search package not installed)"
@@ -304,37 +355,43 @@ def search_web_for_recent_info(query: str, max_results: int = 5) -> str:
 def get_gemini_search_response(prompt: str, temperature: float = 0.8):
     """
     Get a response from Gemini with enhanced search capabilities.
-    For recent events, we'll supplement with web search when possible.
+    Always performs web search to get the most current information available.
     """
     
-    # First, try to get the basic response from Gemini
-    gemini_response = _make_request(prompt, temperature)
+    # Extract key terms for web search from the post content
+    lines = prompt.split('\n')
+    post_text = ""
+    for line in lines:
+        if 'Post text:' in line:
+            # Find the post text section
+            start_idx = lines.index(line)
+            for i in range(start_idx + 1, min(start_idx + 10, len(lines))):
+                if lines[i].strip() and not lines[i].startswith('```'):
+                    post_text += lines[i] + " "
+            break
     
-    # Check if the prompt involves recent events that might need web search
-    recent_keywords = ['2024', '2025', 'recent', 'latest', 'just passed', 'new bill', 'just signed', 'breaking']
-    
-    if any(keyword in prompt.lower() for keyword in recent_keywords):
-        # Extract key terms for web search
-        # Look for specific claims that might be recent
-        lines = prompt.split('\n')
-        post_text = ""
-        for line in lines:
-            if 'Post text:' in line:
-                # Find the post text section
-                start_idx = lines.index(line)
-                for i in range(start_idx + 1, min(start_idx + 10, len(lines))):
-                    if lines[i].strip() and not lines[i].startswith('```'):
-                        post_text += lines[i] + " "
-                break
+    # Always perform web search for current information
+    web_results = ""
+    if post_text.strip():
+        # Perform web search for recent information
+        web_results = search_web_for_recent_info(post_text[:200])  # Limit query length
         
-        if post_text.strip():
-            # Perform web search for recent information
-            web_results = search_web_for_recent_info(post_text[:200])  # Limit query length
-            
-            if "Web search error" not in web_results and "unavailable" not in web_results:
-                # Combine Gemini response with web search results
-                enhanced_response = f"{gemini_response}\n\n--- SUPPLEMENTAL WEB SEARCH FOR RECENT EVENTS ---\n{web_results}"
-                return enhanced_response
+        if "Web search error" in web_results or "unavailable" in web_results:
+            print(f"Web search failed: {web_results}")
+            web_results = ""
+    
+    # Get Gemini's response with enhanced prompt including web search results
+    enhanced_prompt = prompt
+    if web_results:
+        enhanced_prompt = f"""{prompt}
+
+--- CURRENT WEB SEARCH RESULTS (USE THESE FOR MOST RECENT INFORMATION) ---
+{web_results}
+
+CRITICAL INSTRUCTION: When fact-checking, prioritize information from the WEB SEARCH RESULTS above, as it contains the most current and up-to-date information available. If there's any conflict between your training data and the web search results, defer to the web search results for recent events and current status information.
+"""
+    
+    gemini_response = _make_request(enhanced_prompt, temperature)
     
     return gemini_response
 
@@ -411,6 +468,31 @@ def fetch_page_content(url: str, timeout: int = 10) -> Tuple[Optional[str], int,
         return None, 0, f"Error: {str(e)}"
 
 
+def _needs_current_verification(text: str) -> bool:
+    """
+    Determine if the content likely contains claims that need current verification
+    """
+    current_keywords = [
+        # Time indicators
+        '2024', '2025', 'recent', 'latest', 'just', 'new', 'current', 'now', 'today', 'yesterday',
+        'this year', 'last year', 'recently', 'breaking', 'announced', 'declared', 'signed',
+        
+        # Political/election keywords
+        'mayor', 'election', 'primary', 'candidate', 'running for', 'campaign', 'elected',
+        'won', 'victory', 'defeated', 'conceded', 'nominee', 'race', 'vote', 'ballot',
+        
+        # Government/policy keywords
+        'bill', 'law', 'policy', 'administration', 'congress', 'senate', 'house',
+        'governor', 'president', 'passed', 'legislation', 'executive order',
+        
+        # Status change keywords
+        'is now', 'has become', 'appointed', 'resigned', 'stepped down', 'takes office',
+        'announced', 'confirmed', 'approved', 'rejected', 'withdrew', 'endorsed'
+    ]
+    
+    text_lower = text.lower()
+    return any(keyword in text_lower for keyword in current_keywords)
+
 def validate_page_content_with_gemini(url: str, content: str, original_claim: str) -> Tuple[bool, str]:
     """
     Use Gemini to validate if page content is relevant and not a 404/error page
@@ -444,6 +526,9 @@ def validate_page_content_with_gemini(url: str, content: str, original_claim: st
             if indicator in content_lower:
                 return False, f"Eliminated/deleted Twitter/X post: {indicator}"
     
+    # Enhanced validation for current events
+    needs_current_info = _needs_current_verification(original_claim)
+    
     prompt = f"""You are validating whether a web page is useful as a source for fact-checking.
 
 Original claim/context: {original_claim[:500]}...
@@ -454,6 +539,8 @@ Page content (first part):
 {content[:3000]}...
 
 IMPORTANT: Pay special attention to the current date context. Today is 2025, so be very careful about claims involving recent events from late 2024 through 2025.
+
+{"EXTRA SCRUTINY REQUIRED: The original claim appears to involve recent events or current status that may have changed. This page MUST contain current, up-to-date information to be valid." if needs_current_info else ""}
 
 Please analyze this page and respond with exactly one of these formats:
 
@@ -469,12 +556,14 @@ The page should be considered INVALID if:
 - It's a deleted/eliminated social media post (Twitter/X)
 - For Twitter/X URLs: shows "Tweet not found", "Account suspended", "This tweet was deleted", or similar messages
 - The information is clearly outdated and contradicts more recent events (especially for 2024-2025 events)
+{"- The page contains outdated information about recent events when current information is critically needed" if needs_current_info else ""}
 
 The page should be considered VALID if:
 - It contains relevant factual information related to the claim
 - It's from a recognizable news source, government site, or credible organization
 - It has substantive content that could be used for fact-checking
 - For recent events (2024-2025): the source has current, up-to-date information
+{"- The information is demonstrably current and addresses recent developments mentioned in the claim" if needs_current_info else ""}
 """
 
     try:
