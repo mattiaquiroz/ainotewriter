@@ -319,9 +319,9 @@ def search_web_for_recent_info(query: str, max_results: int = 10) -> str:
             if not is_failure:
                 # Extract result count from the results string
                 result_count = 0
-                if "Result 1:" in results:
-                    # Count the number of "Result X:" patterns
-                    result_count = len(re.findall(r'Result \d+:', results))
+                if "Result 1" in results:
+                    # Count the number of "Result X:" or "Result X (Priority:" patterns
+                    result_count = len(re.findall(r'Result \d+(?:\s*\(Priority:\s*\d+\))?:', results))
                 
                 print(f"✅ {engine_name} successful - found {result_count} results")
                 # Cache the successful result
@@ -350,17 +350,19 @@ def _search_with_yagooglesearch(query: str, max_results: int = 10) -> str:
         try:
             import yagooglesearch  # type: ignore
         except ImportError:
-            raise Exception("yagooglesearch package not installed. Install with: pip install yagooglesearch")
+            print("    ❌ yagooglesearch package not installed. Install with: pip install yagooglesearch")
+            return "Google search rate limited or no results found"
         
         # Clean query for Google search and try multiple query strategies
         clean_query = query.strip()[:200]  # Increased limit
         
-        # Try different search strategies
+        # Try different search strategies, prioritizing recent information
         search_strategies = [
+            f"{clean_query} 2025",  # Current year first
+            f"{clean_query} 2024",  # Previous year 
+            f"{clean_query} news 2024 OR 2025",  # News with recent years
             clean_query,  # Original query
             f'"{clean_query}"',  # Exact phrase
-            f"{clean_query} 2024 OR 2025",  # With recent years
-            f"{clean_query} news",  # With news keyword
         ]
         
         for strategy_idx, search_query in enumerate(search_strategies):
@@ -401,7 +403,20 @@ def _search_with_yagooglesearch(query: str, max_results: int = 10) -> str:
                             
                             if response.status_code == 200:
                                 from bs4 import BeautifulSoup
-                                soup = BeautifulSoup(response.content, 'html.parser')
+                                
+                                # Handle encoding properly
+                                try:
+                                    # Try to get encoding from response headers
+                                    content = response.content
+                                    if response.encoding:
+                                        content = response.content.decode(response.encoding, errors='replace')
+                                    else:
+                                        content = response.content.decode('utf-8', errors='replace')
+                                    
+                                    soup = BeautifulSoup(content, 'html.parser')
+                                except UnicodeDecodeError:
+                                    # Fallback to replacing problematic characters
+                                    soup = BeautifulSoup(response.content, 'html.parser', from_encoding='utf-8')
                                 
                                 title = "No title"
                                 if soup.title and soup.title.string:
@@ -995,12 +1010,25 @@ def fetch_page_content(url: str, timeout: int = 10) -> Tuple[Optional[str], int,
         
         # Check if we got a successful response
         if response.status_code == 200:
-            # Try to get text content
-            content = response.text
-            # Limit content length to avoid overwhelming Gemini
-            if len(content) > 50000:  # Limit to ~50KB
-                content = content[:50000] + "... [content truncated]"
-            return content, response.status_code, ""
+            # Try to get text content with proper encoding handling
+            try:
+                # Try to use the response's encoding if available
+                if response.encoding:
+                    content = response.content.decode(response.encoding, errors='replace')
+                else:
+                    # Try UTF-8 as fallback
+                    content = response.content.decode('utf-8', errors='replace')
+                    
+                # Limit content length to avoid overwhelming Gemini
+                if len(content) > 50000:  # Limit to ~50KB
+                    content = content[:50000] + "... [content truncated]"
+                return content, response.status_code, ""
+            except UnicodeDecodeError:
+                # If decoding fails, use response.text as fallback
+                content = response.text
+                if len(content) > 50000:
+                    content = content[:50000] + "... [content truncated]"
+                return content, response.status_code, ""
         else:
             return None, response.status_code, f"HTTP {response.status_code}"
             
@@ -1093,23 +1121,23 @@ Please analyze this page and respond with exactly one of these formats:
 VALID: [brief explanation of why this page is a good source]
 INVALID: [brief explanation of why this page is not useful - e.g., 404 error, irrelevant content, broken page, deleted social media post, etc.]
 
-The page should be considered INVALID if:
-- It's a 404 or error page
-- It's completely irrelevant to the original claim
-- It's a generic homepage without specific information
-- It contains mostly ads or navigation without substantive content
-- It's broken or corrupted content
+The page should be considered INVALID ONLY if:
+- It's clearly a 404 or error page
+- It's completely irrelevant to the original claim (no connection at all)
 - It's a deleted/eliminated social media post (Twitter/X)
 - For Twitter/X URLs: shows "Tweet not found", "Account suspended", "This tweet was deleted", or similar messages
-- The information is clearly outdated and contradicts more recent events (especially for 2024-2025 events)
-{"- The page contains outdated information about recent events when current information is critically needed" if needs_current_info else ""}
+- It contains only ads or navigation without ANY substantive content
+- It's clearly broken or corrupted content
 
 The page should be considered VALID if:
-- It contains relevant factual information related to the claim
+- It contains ANY relevant factual information related to the claim (even if not perfect)
 - It's from a recognizable news source, government site, or credible organization
 - It has substantive content that could be used for fact-checking
-- For recent events (2024-2025): the source has current, up-to-date information
-{"- The information is demonstrably current and addresses recent developments mentioned in the claim" if needs_current_info else ""}
+- For recent events (2024-2025): the source has information that could be relevant to current events
+- It's a legitimate website that loaded successfully and contains real content
+{"- The information could be useful for understanding recent developments mentioned in the claim" if needs_current_info else ""}
+
+BE GENEROUS in validation - if there's ANY doubt about whether the page could be useful, mark it as VALID. We want to include sources that could potentially help with fact-checking rather than being overly restrictive.
 """
 
     try:
@@ -1151,21 +1179,38 @@ def verify_and_filter_links(search_results: str, original_query: str) -> Tuple[O
     valid_urls = []
     url_validation_results = {}
     
-    # Verify each URL
+    # Verify each URL with more lenient validation
     for i, url in enumerate(urls):
         print(f"  🔗 Checking URL {i+1}/{len(urls)}: {url}")
+        
+        # Check if we should skip this URL based on domain
+        if _should_skip_url(url):
+            print(f"    ❌ Skipping low-quality domain: {url}")
+            url_validation_results[url] = (False, "Low-quality domain")
+            continue
+        
+        # Add rate limiting between requests
+        if i > 0:
+            print(f"Rate limiting: waiting 2.4 seconds...")
+            time.sleep(2.4)
         
         # Fetch page content
         content, status_code, error_msg = fetch_page_content(url)
         
         if content is None:
-            # If we can't fetch the content (404, 403, timeout, etc.), mark as invalid immediately
-            print(f"    ❌ Failed to fetch: {error_msg}")
-            url_validation_results[url] = (False, f"Failed to fetch: {error_msg}")
-            continue
+            # For major errors like 404, 403, mark as invalid
+            if status_code in [404, 403]:
+                print(f"    ❌ Failed to fetch: {error_msg}")
+                url_validation_results[url] = (False, f"Failed to fetch: {error_msg}")
+                continue
+            else:
+                # For other errors (timeout, connection issues), still mark as invalid but less strict
+                print(f"    ⚠️ Fetch issues but trying to include: {error_msg}")
+                # Don't continue, let it be validated by Gemini with empty content
+                content = f"Unable to fetch content: {error_msg}"
         
-        # Only validate with Gemini if we successfully fetched content
-        is_valid, explanation = validate_page_content_with_gemini(url, content, original_query)
+        # Only validate with Gemini if we successfully fetched content OR if it's a fetch error that might be temporary
+        is_valid, explanation = validate_page_content_with_gemini(url, content or "", original_query)
         
         if is_valid:
             print(f"    ✅ Valid: {explanation}")
@@ -1177,12 +1222,20 @@ def verify_and_filter_links(search_results: str, original_query: str) -> Tuple[O
     
     print(f"📊 Link verification complete: {len(valid_urls)}/{len(urls)} URLs are valid")
     
+    # Show detailed validation results for debugging
+    print("📋 Detailed validation results:")
+    for url, (is_valid, explanation) in url_validation_results.items():
+        status_icon = "✅" if is_valid else "❌"
+        print(f"  {status_icon} {url}: {explanation}")
+    
     # Filter the search results to only include valid URLs
     if len(valid_urls) == 0:
         print("❌ No valid sources found - canceling note generation")
+        print("🔍 This might indicate overly strict validation or network issues")
         return None, []  # Return None to indicate no valid sources
     
     print(f"✅ Found {len(valid_urls)} valid sources - proceeding with note generation")
+    print(f"🎯 Valid sources: {', '.join(valid_urls)}")
     
     # Create a filtered version that emphasizes only valid sources
     filtered_results = f"""VERIFIED VALID SOURCES (ONLY USE THESE):
