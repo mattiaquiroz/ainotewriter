@@ -97,7 +97,7 @@ def _worker(
 
 
 def main(
-    num_posts: int = 10,
+    num_posts: int = 7,
     dry_run: bool = False,
     concurrency: int = 1,
 ):
@@ -160,7 +160,7 @@ if __name__ == "__main__":
     dotenv.load_dotenv()
     parser = argparse.ArgumentParser(description="Run note‑writing bot once.")
     parser.add_argument(
-        "--num-posts", type=int, default=10, help="Number of posts to process"
+        "--num-posts", type=int, default=7, help="Number of posts to process"
     )
     parser.add_argument(
         "--dry-run",
