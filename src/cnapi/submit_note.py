@@ -6,11 +6,11 @@ from .xurl_util import run_xurl
 from data_models import ProposedMisleadingNote
 
 
-def get_notes_written_by_user(test_mode: bool = True, max_results: int = 100) -> Set[str]:
+def get_notes_written_by_user(test_mode: bool = True, max_results: int = 100) -> Dict[str, Any]:
     """
-    Get all post IDs that the user has already written notes for.
+    Get all notes that the user has already written.
     Uses the official API endpoint: GET /2/notes/search/notes_written
-    Returns a set of post_id strings for fast lookup.
+    Returns the complete API response containing note data, errors, and meta information.
     """
     try:
         path = (
@@ -29,8 +29,7 @@ def get_notes_written_by_user(test_mode: bool = True, max_results: int = 100) ->
         print(f"DEBUG: Raw API response: {result}")
         print(f"DEBUG: Response type: {type(result)}")
         
-        # Extract post_ids from the response
-        post_ids = set()
+        # Return the complete response
         if isinstance(result, dict):
             print(f"DEBUG: Response keys: {result.keys()}")
             
@@ -38,27 +37,22 @@ def get_notes_written_by_user(test_mode: bool = True, max_results: int = 100) ->
                 print(f"DEBUG: Found 'data' key with {len(result['data'])} items")
                 for i, note in enumerate(result["data"]):
                     print(f"DEBUG: Note {i}: {note}")
-                    if "post_id" in note:
-                        post_id = str(note["post_id"])
-                        post_ids.add(post_id)
-                        print(f"DEBUG: Added post_id: {post_id}")
-                    else:
-                        print(f"DEBUG: Note {i} missing 'post_id' field")
             else:
                 print("DEBUG: No 'data' key found in response")
+            
+            return result
         else:
             print(f"DEBUG: Response is not a dict: {result}")
-        
-        print(f"DEBUG: Final post_ids set: {post_ids}")
-        print(f"DEBUG: Returning {len(post_ids)} post IDs")
-        return post_ids
+            # Return empty structure if response is not a dict
+            return {"data": [], "errors": [], "meta": {"result_count": 0}}
         
     except Exception as e:
         print(f"ERROR: Could not fetch existing notes: {e}")
         print(f"ERROR: Exception type: {type(e)}")
         import traceback
         print(f"ERROR: Traceback: {traceback.format_exc()}")
-        return set()  # Return empty set on error, so we don't skip posts unnecessarily
+        # Return empty structure on error
+        return {"data": [], "errors": [], "meta": {"result_count": 0}}
 
 
 def submit_note(

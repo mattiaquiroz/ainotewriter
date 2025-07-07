@@ -118,9 +118,9 @@ def main(
 
         notes_written_by_user = get_notes_written_by_user(max_results=num_posts)
 
-        for note in notes_written_by_user:
+        for note in notes_written_by_user.get("data", []):
             print(f"Note: {note}")
-            print(f"Post ID: {note.data.post_id}")
+            print(f"Post ID: {note.get('post_id')}")
             print("--------------------------------")
 
         return
