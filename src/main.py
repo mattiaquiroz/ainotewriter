@@ -116,12 +116,13 @@ def main(
         eligible_posts: List[Post] = get_posts_eligible_for_notes(max_results=num_posts)
         print(f"Found {len(eligible_posts)} recent posts eligible for notes")
 
-        #notes_written_by_user = get_notes_written_by_user(max_results=num_posts)
+        notes_written_by_user = get_notes_written_by_user(max_results=num_posts)
 
-        #for note in notes_written_by_user.get("data", []):
-        #    print(f"Note: {note}")
-        #    print(f"Post ID: {note.get('post_id')}")
-        #    print("--------------------------------")
+        for note in notes_written_by_user.get("data", []):
+            print(f"Note ID: {note.get('id')}")
+            print(f"Status: {note.get('status')}")
+            print(f"Test Result: {note.get('test_result')}")
+            print("--------------------------------")
         
         # Filter out posts we've already processed
         new_posts = [post for post in eligible_posts if str(post.post_id) not in processed_post_ids]
