@@ -98,7 +98,7 @@ def _worker(
 
 
 def main(
-    num_posts: int = 7,
+    num_posts: int = 5,
     dry_run: bool = False,
     concurrency: int = 1,
 ):
@@ -116,14 +116,12 @@ def main(
         eligible_posts: List[Post] = get_posts_eligible_for_notes(max_results=num_posts)
         print(f"Found {len(eligible_posts)} recent posts eligible for notes")
 
-        notes_written_by_user = get_notes_written_by_user(max_results=num_posts)
+        #notes_written_by_user = get_notes_written_by_user(max_results=num_posts)
 
-        for note in notes_written_by_user.get("data", []):
-            print(f"Note: {note}")
-            print(f"Post ID: {note.get('post_id')}")
-            print("--------------------------------")
-
-        return
+        #for note in notes_written_by_user.get("data", []):
+        #    print(f"Note: {note}")
+        #    print(f"Post ID: {note.get('post_id')}")
+        #    print("--------------------------------")
         
         # Filter out posts we've already processed
         new_posts = [post for post in eligible_posts if str(post.post_id) not in processed_post_ids]
@@ -170,7 +168,7 @@ if __name__ == "__main__":
     dotenv.load_dotenv()
     parser = argparse.ArgumentParser(description="Run note‑writing bot once.")
     parser.add_argument(
-        "--num-posts", type=int, default=7, help="Number of posts to process"
+        "--num-posts", type=int, default=5, help="Number of posts to process"
     )
     parser.add_argument(
         "--dry-run",

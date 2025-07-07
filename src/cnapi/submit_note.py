@@ -24,7 +24,7 @@ def get_notes_written_by_user(test_mode: bool = True, max_results: int = 100) ->
         ]
         
         result = run_xurl(cmd, verbose_if_failed=True)
-        print(json.dumps(result, indent=2))
+        #print(json.dumps(result, indent=2))
         
         print(f"DEBUG: Raw API response: {result}")
         print(f"DEBUG: Response type: {type(result)}")
