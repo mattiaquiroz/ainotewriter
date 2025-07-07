@@ -123,6 +123,8 @@ def main(
             print(f"Status: {note.get('status')}")
             print(f"Test Result: {note.get('test_result')}")
             print("--------------------------------")
+
+        return
         
         # Filter out posts we've already processed
         new_posts = [post for post in eligible_posts if str(post.post_id) not in processed_post_ids]
