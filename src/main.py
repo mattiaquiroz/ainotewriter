@@ -120,7 +120,7 @@ def main(
 
         for note in notes_written_by_user:
             print(f"Note: {note}")
-            print(f"Post ID: {note.post_id}")
+            print(f"Post ID: {note.data.post_id}")
             print("--------------------------------")
 
         return
