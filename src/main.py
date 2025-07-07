@@ -4,6 +4,7 @@ from typing import List
 
 from cnapi.get_api_eligible_posts import get_posts_eligible_for_notes
 from cnapi.submit_note import submit_note
+from cnapi.submit_note import get_notes_written_by_user
 from cnapi.gist_util import get_processed_post_ids, add_processed_post_id
 from data_models import NoteResult, Post
 import dotenv
@@ -115,13 +116,11 @@ def main(
         eligible_posts: List[Post] = get_posts_eligible_for_notes(max_results=num_posts)
         print(f"Found {len(eligible_posts)} recent posts eligible for notes")
 
-        for post in eligible_posts:
-            print(f"Post: {post.post_id}")
-            print(f"Text: {post.text}")
-            print(f"Media: {post.media}")
-            print(f"Created at: {post.created_at}")
-            print(f"Author ID: {post.author_id}")
-            print(f"Media: {post.media}")
+        notes_written_by_user = get_notes_written_by_user(max_results=num_posts)
+
+        for note in notes_written_by_user:
+            print(f"Note: {note}")
+            print(f"Post ID: {note.post_id}")
             print("--------------------------------")
 
         return
